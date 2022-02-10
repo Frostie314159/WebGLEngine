@@ -1,3 +1,5 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 class Program {
     shaders;
     program;
@@ -46,6 +48,117 @@ class Program {
         });
     }
 }
+class VBOData {
+    data;
+    dataLength;
+    attribLocation;
+    elementSize;
+    elementType;
+    isIndexBuffer;
+    constructor(gl, data, program, attribLocationName, elementSize, elementType, isIndexBuffer = false) {
+        this.data = data;
+        this.dataLength = data.length;
+        this.attribLocation = gl.getAttribLocation(program.program, attribLocationName);
+        this.elementSize = elementSize;
+        this.elementType = elementType;
+        this.isIndexBuffer = isIndexBuffer;
+    }
+}
+class VBO {
+    vboData;
+    vbo;
+    constructor(vboData = undefined, vbo = undefined) {
+        this.vboData = vboData;
+        this.vbo = vbo;
+    }
+    bindVBO(gl) {
+        gl.bindBuffer((this.vboData.isIndexBuffer ? WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER : WebGL2RenderingContext.ARRAY_BUFFER), this.vbo);
+    }
+    unbindVBO(gl) {
+        gl.bindBuffer((this.vboData.isIndexBuffer ? WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER : WebGL2RenderingContext.ARRAY_BUFFER), null);
+    }
+    enableVBO(gl) {
+        if (this.vboData.isIndexBuffer) {
+            this.bindVBO(gl);
+        }
+        else {
+            gl.enableVertexAttribArray(this.vboData.attribLocation);
+        }
+    }
+    disableVBO(gl) {
+        if (this.vboData.isIndexBuffer) {
+            this.unbindVBO(gl);
+        }
+        else {
+            gl.disableVertexAttribArray(this.vboData.attribLocation);
+        }
+    }
+    static async loadVBOFromArray(gl, vboData) {
+        return new Promise((resolve, reject) => {
+            var vbo = new VBO(vboData, gl.createBuffer());
+            vbo.bindVBO(gl);
+            vbo.enableVBO(gl);
+            gl.bufferData((vbo.vboData.isIndexBuffer ? WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER : WebGL2RenderingContext.ARRAY_BUFFER), vboData.data, WebGL2RenderingContext.STATIC_DRAW);
+            if (!vbo.vboData.isIndexBuffer) {
+                gl.vertexAttribPointer(vboData.attribLocation, vboData.elementSize, vboData.elementType, false, 0, 0);
+            }
+            vbo.vboData.data = undefined;
+            vbo.disableVBO(gl);
+            vbo.unbindVBO(gl);
+            resolve(vbo);
+        });
+    }
+}
+class VAO {
+    vbos;
+    vao;
+    length;
+    containsIndexBuffer;
+    constructor(vbos = undefined, vao = undefined) {
+        this.vbos = vbos;
+        this.vao = vao;
+    }
+    bindVAO(gl) {
+        gl.bindVertexArray(this.vao);
+    }
+    unbindVAO(gl) {
+        gl.bindVertexArray(null);
+    }
+    enableVAO(gl) {
+        this.bindVAO(gl);
+        this.vbos.forEach((currentVBO) => {
+            currentVBO.enableVBO(gl);
+        });
+    }
+    disableVAO(gl) {
+        this.vbos.reverse().forEach((currentVBO) => {
+            currentVBO.disableVBO(gl);
+        });
+        this.unbindVAO(gl);
+    }
+    static async loadVAOFromArray(gl, ...vboData) {
+        return new Promise(async (resolve, reject) => {
+            var vao = new VAO(undefined, gl.createVertexArray());
+            vao.bindVAO(gl);
+            vao.vbos = await Promise.all((() => {
+                var vboPromises = [];
+                vboData.forEach((currentVBOData) => {
+                    vboPromises.push(VBO.loadVBOFromArray(gl, currentVBOData));
+                });
+                return vboPromises;
+            })());
+            vao.unbindVAO(gl);
+            vao.vbos.forEach((currentVBO) => {
+                if (currentVBO.vboData.isIndexBuffer) {
+                    vao.containsIndexBuffer = true;
+                }
+                else {
+                    vao.length = currentVBO.vboData.dataLength;
+                }
+            });
+        });
+    }
+}
 async function loadFile(url) {
     return new Promise(async (resolve, reject) => {
         fetch(url).then(async (response) => {
@@ -76,5 +189,11 @@ async function createContext() {
 async function main() {
     var gl = await createContext();
     var program = await Program.loadProgram(gl, "shader");
-    program.delete(gl);
+    var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, 0, 1, 1, -1]), program, "pos", 2, WebGL2RenderingContext.FLOAT, false));
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
+    gl.useProgram(program.program);
+    vao.bindVAO(gl);
+    gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, vao.length);
 }
