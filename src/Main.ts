@@ -5,9 +5,42 @@ class Program{
         this.shaders = shaders;
         this.program = program;
     }
-    public static async loadProgram(gl:WebGL2RenderingContext, name:string): Promise<WebGLProgram>{
-        return new Promise<Program>((resolve, reject) => {
+    public delete(gl:WebGL2RenderingContext){
+        gl.deleteProgram(this.program);
+    }
+    private static detectShaderType(name:string): number{
+        return name.includes(".vert") ? WebGL2RenderingContext.VERTEX_SHADER : WebGL2RenderingContext.FRAGMENT_SHADER;
+    }
+    private static async loadShader(gl:WebGL2RenderingContext, name:string): Promise<WebGLShader>{
+        return new Promise<WebGLShader>(async (resolve, reject) => {
+            var shader:WebGLShader = gl.createShader(this.detectShaderType(name));
+            gl.shaderSource(shader, `#version 300 es
+            ${await loadFile(`res/shaders/${name}`)}`);
+            gl.compileShader(shader);
+            if(gl.getShaderParameter(shader, WebGL2RenderingContext.COMPILE_STATUS)){
+                resolve(shader);
+            }else{
+                let shaderInfoLog:string = gl.getShaderInfoLog(shader);
+                gl.deleteShader(shader);
+                reject(new Error(shaderInfoLog));
+            }
+        })
+    }
+    public static async loadProgram(gl:WebGL2RenderingContext, name:string): Promise<Program>{
+        return new Promise<Program>(async (resolve, reject) => {
             var program:Program = new Program(undefined, gl.createProgram());
+            program.shaders = await Promise.all([Program.loadShader(gl, `${name}.vert`), Program.loadShader(gl, `${name}.frag`)]);
+            program.shaders.forEach((currentShader:WebGLShader) => {
+                gl.attachShader(program.program, currentShader);
+            });
+            gl.linkProgram(program.program);
+            if(gl.getProgramParameter(program.program, WebGL2RenderingContext.LINK_STATUS)){
+                resolve(program);
+            }else{
+                let programInfoLog:string = gl.getProgramInfoLog(program.program);
+                program.delete(gl);
+                reject(new Error(programInfoLog));
+            }
         })
     }
 }
@@ -37,5 +70,7 @@ async function createContext(): Promise<WebGL2RenderingContext>{
     });
 }
 async function main():Promise<void> {
-    console.log(await createContext());
+    var gl:WebGL2RenderingContext = await createContext();
+    var program:Program = await Program.loadProgram(gl, "shader");
+    program.delete(gl);
 }
