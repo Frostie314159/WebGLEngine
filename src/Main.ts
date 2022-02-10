@@ -1,3 +1,5 @@
+import {vec2, vec3, vec4, mat2, mat3, mat4, glMatrix} from "gl-matrix";
+glMatrix.setMatrixArrayType(Array);
 class Program{
     shaders:WebGLShader[];
     program:WebGLProgram;
@@ -42,6 +44,59 @@ class Program{
                 reject(new Error(programInfoLog));
             }
         })
+    }
+}
+class VBOData{
+    data:Float32Array;
+    dataLength:number;
+    attribLocation:number;
+    elementSize:number;
+    elementType:number;
+    isIndexBuffer:boolean;
+    constructor(gl:WebGL2RenderingContext, data:Float32Array, program:Program, attribLocationName:string, elementSize:number, elementType:number, isIndexBuffer:boolean = false){
+        this.data = data;
+        this.dataLength = data.length;
+        this.attribLocation = gl.getAttribLocation(program, attribLocationName);
+        this.elementSize = elementSize;
+        this.elementType = elementType;
+        this.isIndexBuffer = isIndexBuffer;
+    }
+}
+class VBO{
+    vboData:VBOData;
+    vbo:WebGLBuffer;
+    constructor(vboData:VBOData = undefined, vbo:WebGLBuffer = undefined){
+        this.vboData = vboData;
+        this.vbo = vbo;
+    }
+    public bind(gl:WebGL2RenderingContext): void{
+        gl.bindBuffer((this.vboData.isIndexBuffer ? WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER : WebGL2RenderingContext.ARRAY_BUFFER), this.vbo);
+    }
+    public unbind(gl:WebGL2RenderingContext): void{
+        gl.bindBuffer((this.vboData.isIndexBuffer ? WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER : WebGL2RenderingContext.ARRAY_BUFFER), null);
+    }
+    public enableVBO(gl:WebGL2RenderingContext): void{
+        if(this.vboData.isIndexBuffer){
+            this.bind(gl);
+        }else{
+            gl.enableVertexAttribArray(this.vboData.attribLocation);
+        }
+    }
+    public disableVBO(gl:WebGL2RenderingContext): void{
+        if(this.vboData.isIndexBuffer){
+            this.unbind(gl);
+        }else{
+            gl.disableVertexAttribArray(this.vboData.attribLocation);
+        }
+    }
+    public static async loadVBOFromArray(gl:WebGL2RenderingContext, vboData:VBOData): Promise<VBO>{
+        return new Promise<VBO>((resolve, reject) => {
+            var vbo:VBO = new VBO(vboData, gl.createBuffer());
+            vbo.bind(gl);
+            vbo.enableVBO(gl);
+            gl.bufferData((vbo.vboData.isIndexBuffer ? WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER : WebGL2RenderingContext.ARRAY_BUFFER), vboData.data, WebGL2RenderingContext.STATIC_DRAW);
+
+        });
     }
 }
 async function loadFile(url:string): Promise<string>{
