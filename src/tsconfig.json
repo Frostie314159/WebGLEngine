@@ -6,5 +6,8 @@
             "ESNext",
             "ESNext.Promise"
         ]
-    }
+    },
+    "files": [
+        "Main.ts"
+    ]
 }
