@@ -6,6 +6,45 @@ class Program {
         this.shaders = shaders;
         this.program = program;
     }
+    public start(gl: WebGL2RenderingContext): void {
+        gl.useProgram(this.program);
+    }
+    public stop(gl: WebGL2RenderingContext): void {
+        gl.useProgram(null);
+    }
+    public loadDataToUniform(gl: WebGL2RenderingContext, location: WebGLUniformLocation, data: number | boolean | vec2 | vec3 | vec4 | mat2 | mat3 | mat4): void {
+        if (typeof data === "number") {
+            if (data % 1 === 0) {
+                if (data < 0) {
+                    gl.uniform1ui(location, data);
+                } else {
+                    gl.uniform1i(location, data);
+                }
+            } else {
+                gl.uniform1f(location, data);
+            }
+        } else if (typeof data === "boolean") {
+            gl.uniform1i(location, data ? 1 : 0);
+        //@ts-ignore
+        } else if (data instanceof vec2){
+            gl.uniform2fv(location, data);
+        //@ts-ignore
+        } else if (data instanceof vec3){
+            gl.uniform3fv(location, data);
+        //@ts-ignore
+        } else if (data instanceof vec4){
+            gl.uniform4fv(location, data);
+        //@ts-ignore
+        } else if (data instanceof mat2){
+            gl.uniformMatrix2fv(location, false, data);
+        //@ts-ignore
+        } else if (data instanceof mat3){
+            gl.uniformMatrix3fv(location, false, data);
+        //@ts-ignore
+        } else if (data instanceof mat4){
+            gl.uniformMatrix4fv(location, false, data);
+        }
+    }
     public delete(gl: WebGL2RenderingContext) {
         gl.deleteProgram(this.program);
     }
@@ -46,13 +85,13 @@ class Program {
     }
 }
 class VBOData {
-    data: Float32Array;
+    data: Float32Array | Uint16Array;
     dataLength: number;
     attribLocation: number;
     elementSize: number;
     elementType: number;
     isIndexBuffer: boolean;
-    constructor(gl: WebGL2RenderingContext, data: Float32Array, program: Program, attribLocationName: string, elementSize: number, elementType: number, isIndexBuffer: boolean = false) {
+    constructor(gl: WebGL2RenderingContext, data: Float32Array | Uint16Array, program: Program, attribLocationName: string, elementSize: number, elementType: number, isIndexBuffer: boolean = false) {
         this.data = data;
         this.dataLength = data.length;
         this.attribLocation = gl.getAttribLocation(program.program, attribLocationName);
@@ -88,7 +127,7 @@ class VBO {
             gl.disableVertexAttribArray(this.vboData.attribLocation);
         }
     }
-    public delete(gl:WebGL2RenderingContext): void {
+    public delete(gl: WebGL2RenderingContext): void {
         gl.deleteBuffer(this.vbo);
     }
     public static async loadVBOFromArray(gl: WebGL2RenderingContext, vboData: VBOData): Promise<VBO> {
@@ -136,8 +175,8 @@ class VAO {
         });
         this.unbindVAO(gl);
     }
-    public delete(gl:WebGL2RenderingContext): void {
-        this.vbos.reverse().forEach((currentVBO:VBO) => {
+    public delete(gl: WebGL2RenderingContext): void {
+        this.vbos.reverse().forEach((currentVBO: VBO) => {
             currentVBO.delete(gl);
         });
         gl.deleteVertexArray(this.vao);
@@ -157,12 +196,50 @@ class VAO {
             vao.vbos.forEach((currentVBO: VBO) => {
                 if (currentVBO.vboData.isIndexBuffer) {
                     vao.containsIndexBuffer = true;
-                } else if (!currentVBO.vboData.isIndexBuffer && vao.length == undefined) {
-                    vao.length = currentVBO.vboData.dataLength / currentVBO.vboData.elementSize;
+                    vao.length = currentVBO.vboData.dataLength;
                 }
             });
+            if(!vao.containsIndexBuffer){
+                vao.length = vao.vbos[0].vboData.dataLength / vao.vbos[0].vboData.elementSize;
+            }
             resolve(vao);
         });
+    }
+}
+class Renderer {
+    program:Program;
+    drawMode:number;
+    projectionMatrix: mat4;
+    constructor(gl:WebGL2RenderingContext, programName:string) {
+        Program.loadProgram(gl, programName).then((program:Program) => {
+            this.program = program;
+        });
+        this.drawMode = WebGL2RenderingContext.TRIANGLES;
+    }
+    public static prepareViewport(gl: WebGL2RenderingContext): void {
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+    }
+    public static clear(gl:WebGL2RenderingContext): void{
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
+    }
+    public delete(gl:WebGL2RenderingContext): void{
+        this.program.delete(gl);
+    }
+    public render(gl:WebGL2RenderingContext, vaos:VAO[]): void{
+        Renderer.prepareViewport(gl);
+        Renderer.clear(gl);
+        this.program.start(gl);
+        vaos.forEach((currentVAO:VAO) => {
+            currentVAO.enableVAO(gl);
+            if(currentVAO.containsIndexBuffer){
+                gl.drawElements(WebGL2RenderingContext.TRIANGLES, currentVAO.length, gl.UNSIGNED_SHORT, 0);
+            }else{
+                gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, currentVAO.length);
+            }
+            currentVAO.disableVAO(gl);
+        });
+        this.program.stop(gl);
     }
 }
 async function loadFile(url: string): Promise<string> {
@@ -179,8 +256,8 @@ async function loadFile(url: string): Promise<string> {
 async function createContext(): Promise<WebGL2RenderingContext> {
     return new Promise<WebGL2RenderingContext>((resolve, reject) => {
         var canvas: HTMLCanvasElement = document.createElement("canvas");
-        canvas.width = screen.width;
-        canvas.height = screen.height;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
         document.body.appendChild(canvas);
         let gl: WebGL2RenderingContext = canvas.getContext("webgl2");
         if (gl) {
@@ -193,15 +270,20 @@ async function createContext(): Promise<WebGL2RenderingContext> {
 async function main(): Promise<void> {
     var gl: WebGL2RenderingContext = await createContext();
     var program: Program = await Program.loadProgram(gl, "shader");
-    var vao: VAO = await VAO.loadVAOFromArray(gl, 
-        new VBOData(gl, new Float32Array([-1, -1, 0, 1, 1, -1]), program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false),
-        new VBOData(gl, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]), program, "in_col", 3, WebGL2RenderingContext.FLOAT, false)
+    var vao: VAO = await VAO.loadVAOFromArray(gl,
+        new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false),
+        new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1]), program, "in_col", 3, WebGL2RenderingContext.FLOAT, false),
+        new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
     );
-    console.log(vao);
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
-    gl.useProgram(program.program);
+    program.start(gl);
+    program.loadDataToUniform(gl, gl.getUniformLocation(program.program, "u_alpha"), 0.9);
     vao.enableVAO(gl);
-    gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, vao.length);
+    gl.drawElements(WebGL2RenderingContext.TRIANGLES, vao.length, WebGL2RenderingContext.UNSIGNED_SHORT, 0);
+    vao.disableVAO(gl);
+    vao.delete(gl);
+    program.stop(gl);
+    program.delete(gl);
 }

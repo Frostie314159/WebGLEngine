@@ -7,6 +7,54 @@ class Program {
         this.shaders = shaders;
         this.program = program;
     }
+    start(gl) {
+        gl.useProgram(this.program);
+    }
+    stop(gl) {
+        gl.useProgram(null);
+    }
+    loadDataToUniform(gl, location, data) {
+        if (typeof data === "number") {
+            if (data % 1 === 0) {
+                if (data < 0) {
+                    gl.uniform1ui(location, data);
+                }
+                else {
+                    gl.uniform1i(location, data);
+                }
+            }
+            else {
+                gl.uniform1f(location, data);
+            }
+        }
+        else if (typeof data === "boolean") {
+            gl.uniform1i(location, data ? 1 : 0);
+            //@ts-ignore
+        }
+        else if (data instanceof vec2) {
+            gl.uniform2fv(location, data);
+            //@ts-ignore
+        }
+        else if (data instanceof vec3) {
+            gl.uniform3fv(location, data);
+            //@ts-ignore
+        }
+        else if (data instanceof vec4) {
+            gl.uniform4fv(location, data);
+            //@ts-ignore
+        }
+        else if (data instanceof mat2) {
+            gl.uniformMatrix2fv(location, false, data);
+            //@ts-ignore
+        }
+        else if (data instanceof mat3) {
+            gl.uniformMatrix3fv(location, false, data);
+            //@ts-ignore
+        }
+        else if (data instanceof mat4) {
+            gl.uniformMatrix4fv(location, false, data);
+        }
+    }
     delete(gl) {
         gl.deleteProgram(this.program);
     }
@@ -161,13 +209,20 @@ class VAO {
             vao.vbos.forEach((currentVBO) => {
                 if (currentVBO.vboData.isIndexBuffer) {
                     vao.containsIndexBuffer = true;
-                }
-                else if (!currentVBO.vboData.isIndexBuffer && vao.length == undefined) {
-                    vao.length = currentVBO.vboData.dataLength / currentVBO.vboData.elementSize;
+                    vao.length = currentVBO.vboData.dataLength;
                 }
             });
             resolve(vao);
         });
+    }
+}
+class Renderer {
+    vaos;
+    projectionMatrix;
+    constructor() {
+        this.vaos = [];
+    }
+    static prepareViewport(gl) {
     }
 }
 async function loadFile(url) {
@@ -185,8 +240,8 @@ async function loadFile(url) {
 async function createContext() {
     return new Promise((resolve, reject) => {
         var canvas = document.createElement("canvas");
-        canvas.width = screen.width;
-        canvas.height = screen.height;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
         document.body.appendChild(canvas);
         let gl = canvas.getContext("webgl2");
         if (gl) {
@@ -200,12 +255,16 @@ async function createContext() {
 async function main() {
     var gl = await createContext();
     var program = await Program.loadProgram(gl, "shader");
-    var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, 0, 1, 1, -1]), program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]).reverse(), program, "in_col", 3, WebGL2RenderingContext.FLOAT, false));
-    console.log(vao);
+    var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1]), program, "in_col", 3, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true));
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
-    gl.useProgram(program.program);
+    program.start(gl);
+    program.loadDataToUniform(gl, gl.getUniformLocation(program.program, "u_alpha"), 0.9);
     vao.enableVAO(gl);
-    gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, vao.length);
+    gl.drawElements(WebGL2RenderingContext.TRIANGLES, vao.length, WebGL2RenderingContext.UNSIGNED_SHORT, 0);
+    vao.disableVAO(gl);
+    vao.delete(gl);
+    program.stop(gl);
+    program.delete(gl);
 }
