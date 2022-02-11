@@ -1,21 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+//@ts-ignore
+const { vec2, vec3, vec4, mat2, mat3, mat4 } = glMatrix;
 class Program {
     shaders;
     program;
-    constructor(shaders = undefined, program = undefined) {
-        this.shaders = shaders;
-        this.program = program;
-    }
     start(gl) {
         gl.useProgram(this.program);
     }
     stop(gl) {
         gl.useProgram(null);
     }
-    loadDataToUniform(gl, location, data) {
+    loadDataToUniform(gl, location, data, forceFloat = false) {
         if (typeof data === "number") {
-            if (data % 1 === 0) {
+            if (data % 1 === 0 && !forceFloat) {
                 if (data < 0) {
                     gl.uniform1ui(location, data);
                 }
@@ -31,29 +29,24 @@ class Program {
             gl.uniform1i(location, data ? 1 : 0);
             //@ts-ignore
         }
-        else if (data instanceof vec2) {
+        else if (data.length === 2) {
             gl.uniform2fv(location, data);
             //@ts-ignore
         }
-        else if (data instanceof vec3) {
+        else if (data.length === 3) {
             gl.uniform3fv(location, data);
             //@ts-ignore
         }
-        else if (data instanceof vec4) {
+        else if (data.length === 4) {
             gl.uniform4fv(location, data);
             //@ts-ignore
         }
-        else if (data instanceof mat2) {
-            gl.uniformMatrix2fv(location, false, data);
-            //@ts-ignore
-        }
-        else if (data instanceof mat3) {
-            gl.uniformMatrix3fv(location, false, data);
-            //@ts-ignore
-        }
-        else if (data instanceof mat4) {
+        else if (data.length === 16) {
             gl.uniformMatrix4fv(location, false, data);
         }
+    }
+    getUniformLocation(gl, name) {
+        return gl.getUniformLocation(this.program, name);
     }
     delete(gl) {
         gl.deleteProgram(this.program);
@@ -79,7 +72,8 @@ class Program {
     }
     static async loadProgram(gl, name) {
         return new Promise(async (resolve, reject) => {
-            var program = new Program(undefined, gl.createProgram());
+            var program = new Program();
+            program.program = gl.createProgram();
             program.shaders = await Promise.all([Program.loadShader(gl, `${name}.vert`), Program.loadShader(gl, `${name}.frag`)]);
             program.shaders.forEach((currentShader) => {
                 gl.attachShader(program.program, currentShader);
@@ -115,10 +109,6 @@ class VBOData {
 class VBO {
     vboData;
     vbo;
-    constructor(vboData = undefined, vbo = undefined) {
-        this.vboData = vboData;
-        this.vbo = vbo;
-    }
     bindVBO(gl) {
         gl.bindBuffer((this.vboData.isIndexBuffer ? WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER : WebGL2RenderingContext.ARRAY_BUFFER), this.vbo);
     }
@@ -146,7 +136,9 @@ class VBO {
     }
     static async loadVBOFromArray(gl, vboData) {
         return new Promise((resolve, reject) => {
-            var vbo = new VBO(vboData, gl.createBuffer());
+            var vbo = new VBO();
+            vbo.vbo = gl.createBuffer();
+            vbo.vboData = vboData;
             vbo.bindVBO(gl);
             gl.bufferData((vbo.vboData.isIndexBuffer ? WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER : WebGL2RenderingContext.ARRAY_BUFFER), vboData.data, WebGL2RenderingContext.STATIC_DRAW);
             if (!vbo.vboData.isIndexBuffer) {
@@ -165,11 +157,6 @@ class VAO {
     vao;
     length;
     containsIndexBuffer;
-    constructor(vbos = undefined, vao = undefined) {
-        this.vbos = vbos;
-        this.vao = vao;
-        this.containsIndexBuffer = false;
-    }
     bindVAO(gl) {
         gl.bindVertexArray(this.vao);
     }
@@ -196,7 +183,9 @@ class VAO {
     }
     static async loadVAOFromArray(gl, ...vboData) {
         return new Promise(async (resolve, reject) => {
-            var vao = new VAO(undefined, gl.createVertexArray());
+            var vao = new VAO();
+            vao.vao = gl.createVertexArray();
+            vao.containsIndexBuffer = false;
             vao.bindVAO(gl);
             vao.vbos = await Promise.all((() => {
                 var vboPromises = [];
@@ -212,18 +201,80 @@ class VAO {
                     vao.length = currentVBO.vboData.dataLength;
                 }
             });
+            if (!vao.containsIndexBuffer) {
+                vao.length = vao.vbos[0].vboData.dataLength / vao.vbos[0].vboData.elementSize;
+            }
             resolve(vao);
         });
     }
 }
+class Camera {
+    rot;
+    pos;
+    constructor(pos, rot) {
+        this.rot = rot;
+        this.pos = pos;
+    }
+    //@ts-ignore
+    getViewMatrix() {
+        //@ts-ignore
+        return mat4.translate(mat4.create(), rotateXYZ(this.rot[0], this.rot[1], this.rot[2]), this.pos);
+    }
+}
 class Renderer {
-    vaos;
+    program;
+    drawMode;
     projectionMatrix;
-    constructor() {
-        this.vaos = [];
+    static FOV = 90;
+    static NEAR = 0.1;
+    static FAR = 1000;
+    static async init(gl, programName) {
+        return new Promise(async (resolve, reject) => {
+            var renderer = new Renderer();
+            renderer.program = await Program.loadProgram(gl, programName);
+            renderer.drawMode = WebGL2RenderingContext.TRIANGLES;
+            //@ts-ignore
+            renderer.projectionMatrix = mat4.perspective(mat4.create(), Renderer.FOV, gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
+            resolve(renderer);
+        });
     }
     static prepareViewport(gl) {
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     }
+    static clear(gl) {
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
+    }
+    delete(gl) {
+        this.program.delete(gl);
+    }
+    render(gl, vaos) {
+        Renderer.prepareViewport(gl);
+        Renderer.clear(gl);
+        this.program.start(gl);
+        vaos.forEach((currentVAO) => {
+            currentVAO.enableVAO(gl);
+            if (currentVAO.containsIndexBuffer) {
+                gl.drawElements(WebGL2RenderingContext.TRIANGLES, currentVAO.length, gl.UNSIGNED_SHORT, 0);
+            }
+            else {
+                gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, currentVAO.length);
+            }
+            currentVAO.disableVAO(gl);
+        });
+        this.program.stop(gl);
+    }
+}
+function rotateXYZ(x, y, z) {
+    //@ts-ignore
+    var matrix = mat4.create();
+    //@ts-ignore
+    mat4.rotateX(matrix, matrix, glMatrix.toRadian(x));
+    //@ts-ignore
+    mat4.rotateY(matrix, matrix, glMatrix.toRadian(y));
+    //@ts-ignore
+    mat4.rotateZ(matrix, matrix, glMatrix.toRadian(z));
+    return matrix;
 }
 async function loadFile(url) {
     return new Promise(async (resolve, reject) => {
@@ -252,19 +303,15 @@ async function createContext() {
         }
     });
 }
-async function main() {
+async function init() {
     var gl = await createContext();
-    var program = await Program.loadProgram(gl, "shader");
-    var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1]), program, "in_col", 3, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true));
-    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
-    program.start(gl);
-    program.loadDataToUniform(gl, gl.getUniformLocation(program.program, "u_alpha"), 0.9);
-    vao.enableVAO(gl);
-    gl.drawElements(WebGL2RenderingContext.TRIANGLES, vao.length, WebGL2RenderingContext.UNSIGNED_SHORT, 0);
-    vao.disableVAO(gl);
-    vao.delete(gl);
-    program.stop(gl);
-    program.delete(gl);
+    var renderer = await Renderer.init(gl, "shader");
+    var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), renderer.program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), renderer.program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true));
+    window.requestAnimationFrame(mainLoop);
+    function mainLoop() {
+        gl.canvas.width = window.innerWidth;
+        gl.canvas.height = window.innerHeight;
+        renderer.render(gl, [vao]);
+        window.requestAnimationFrame(mainLoop);
+    }
 }
