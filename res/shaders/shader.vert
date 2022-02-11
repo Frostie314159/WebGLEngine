@@ -1,5 +1,9 @@
-in vec4 pos;
+in vec4 in_pos;
+in vec3 in_col;
+
+out vec3 out_col;
 
 void main(){
-    gl_Position = pos;
+    out_col = in_col;
+    gl_Position = in_pos;
 }

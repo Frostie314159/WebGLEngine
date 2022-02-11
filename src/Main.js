@@ -93,17 +93,20 @@ class VBO {
             gl.disableVertexAttribArray(this.vboData.attribLocation);
         }
     }
+    delete(gl) {
+        gl.deleteBuffer(this.vbo);
+    }
     static async loadVBOFromArray(gl, vboData) {
         return new Promise((resolve, reject) => {
             var vbo = new VBO(vboData, gl.createBuffer());
             vbo.bindVBO(gl);
-            vbo.enableVBO(gl);
             gl.bufferData((vbo.vboData.isIndexBuffer ? WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER : WebGL2RenderingContext.ARRAY_BUFFER), vboData.data, WebGL2RenderingContext.STATIC_DRAW);
             if (!vbo.vboData.isIndexBuffer) {
+                gl.enableVertexAttribArray(vboData.attribLocation);
                 gl.vertexAttribPointer(vboData.attribLocation, vboData.elementSize, vboData.elementType, false, 0, 0);
+                gl.disableVertexAttribArray(vboData.attribLocation);
             }
             vbo.vboData.data = undefined;
-            vbo.disableVBO(gl);
             vbo.unbindVBO(gl);
             resolve(vbo);
         });
@@ -117,6 +120,7 @@ class VAO {
     constructor(vbos = undefined, vao = undefined) {
         this.vbos = vbos;
         this.vao = vao;
+        this.containsIndexBuffer = false;
     }
     bindVAO(gl) {
         gl.bindVertexArray(this.vao);
@@ -136,6 +140,12 @@ class VAO {
         });
         this.unbindVAO(gl);
     }
+    delete(gl) {
+        this.vbos.reverse().forEach((currentVBO) => {
+            currentVBO.delete(gl);
+        });
+        gl.deleteVertexArray(this.vao);
+    }
     static async loadVAOFromArray(gl, ...vboData) {
         return new Promise(async (resolve, reject) => {
             var vao = new VAO(undefined, gl.createVertexArray());
@@ -152,10 +162,11 @@ class VAO {
                 if (currentVBO.vboData.isIndexBuffer) {
                     vao.containsIndexBuffer = true;
                 }
-                else {
-                    vao.length = currentVBO.vboData.dataLength;
+                else if (!currentVBO.vboData.isIndexBuffer && vao.length == undefined) {
+                    vao.length = currentVBO.vboData.dataLength / currentVBO.vboData.elementSize;
                 }
             });
+            resolve(vao);
         });
     }
 }
@@ -189,11 +200,12 @@ async function createContext() {
 async function main() {
     var gl = await createContext();
     var program = await Program.loadProgram(gl, "shader");
-    var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, 0, 1, 1, -1]), program, "pos", 2, WebGL2RenderingContext.FLOAT, false));
+    var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, 0, 1, 1, -1]), program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]).reverse(), program, "in_col", 3, WebGL2RenderingContext.FLOAT, false));
+    console.log(vao);
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
     gl.useProgram(program.program);
-    vao.bindVAO(gl);
+    vao.enableVAO(gl);
     gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, vao.length);
 }
