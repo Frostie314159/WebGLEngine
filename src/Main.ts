@@ -217,14 +217,16 @@ class Renderer {
     projectionMatrix: mat4;
     static FOV:number = 90;
     static NEAR:number = 0.1;
-    static FAR:number = 1000;
+    static FAR:number = 100;
     public static async init(gl:WebGL2RenderingContext, programName:string): Promise<Renderer>{
         return new Promise<Renderer>(async (resolve, reject) => {
            var renderer:Renderer = new Renderer();
            renderer.program = await Program.loadProgram(gl, programName);
            renderer.drawMode = WebGL2RenderingContext.TRIANGLES;
            //@ts-ignore
-           renderer.projectionMatrix = mat4.perspective(mat4.create(), Renderer.FOV, gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
+           renderer.projectionMatrix = mat4.create();
+           //@ts-ignore
+           mat4.perspective(renderer.projectionMatrix, toRadians(90), gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
            resolve(renderer);
         });
     }
@@ -241,9 +243,17 @@ class Renderer {
     public render(gl:WebGL2RenderingContext, vaos:VAO[]): void{
         Renderer.prepareViewport(gl);
         Renderer.clear(gl);
+        //@ts-ignore
+        var mvm:mat4 = mat4.create();
+        //@ts-ignore
+        mat4.translate(mvm, mvm,  [-0.0, 0.0, -6.0]);
+        rotateXYZ(mvm, 45, 45, 45);
         this.program.start(gl);
         vaos.forEach((currentVAO:VAO) => {
             currentVAO.enableVAO(gl);
+            this.program.loadDataToUniform(gl, this.program.getUniformLocation(gl, "in_projectionMatrix"), this.projectionMatrix);
+            this.program.loadDataToUniform(gl, this.program.getUniformLocation(gl, "in_modelViewMatrix"), mvm);
+            console.log(mvm.length);
             if(currentVAO.containsIndexBuffer){
                 gl.drawElements(WebGL2RenderingContext.TRIANGLES, currentVAO.length, gl.UNSIGNED_SHORT, 0);
             }else{
@@ -254,16 +264,16 @@ class Renderer {
         this.program.stop(gl);
     }
 }
-function rotateXYZ(x:number, y:number, z:number): mat4 {
+function rotateXYZ(matrix:mat4, x:number, y:number, z:number): void {
     //@ts-ignore
-    var matrix:mat4 = mat4.create();
+    mat4.rotateX(matrix, matrix, toRadians(x));
     //@ts-ignore
-    mat4.rotateX(matrix, matrix, glMatrix.toRadian(x));
+    mat4.rotateY(matrix, matrix, toRadians(y));
     //@ts-ignore
-    mat4.rotateY(matrix, matrix, glMatrix.toRadian(y));
-    //@ts-ignore
-    mat4.rotateZ(matrix, matrix, glMatrix.toRadian(z));
-    return matrix;
+    mat4.rotateZ(matrix, matrix, toRadians(z));
+}
+function toRadians(x:number): number{
+    return x * (Math.PI / 180);
 }
 async function loadFile(url: string): Promise<string> {
     return new Promise<string>(async (resolve, reject) => {
