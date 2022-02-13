@@ -208,6 +208,42 @@ class VAO {
         });
     }
 }
+class Texture {
+    texture;
+    isActive;
+    static activeTextures = 0;
+    activateTexture(gl) {
+        gl.activeTexture(WebGL2RenderingContext.TEXTURE0 + Texture.activeTextures);
+        gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, this.texture);
+        Texture.activeTextures++;
+    }
+    disableTexture(gl) {
+        gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, null);
+        Texture.activeTextures--;
+    }
+    bindTexture(gl) {
+        gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, this.texture);
+    }
+    unbindTexture(gl) {
+        gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, null);
+    }
+    static async loadTexture(gl, textureName) {
+        return new Promise(async (resolve, reject) => {
+            var texture = new Texture();
+            texture.texture = gl.createTexture();
+            texture.bindTexture(gl);
+            var image = await loadImage(textureName);
+            gl.texImage2D(WebGL2RenderingContext.TEXTURE_2D, 0, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.UNSIGNED_BYTE, image);
+            gl.generateMipmap(WebGL2RenderingContext.TEXTURE_2D);
+            texture.unbindTexture(gl);
+        });
+    }
+}
+class Entity {
+    vao;
+    pos;
+    rot;
+}
 class Camera {
     rot;
     pos;
@@ -275,6 +311,15 @@ class Renderer {
         this.program.stop(gl);
     }
 }
+async function loadImage(imageName) {
+    return new Promise((resolve, reject) => {
+        var image = new Image();
+        image.src = `res/shaders/${imageName}.png`;
+        image.onload = () => {
+            resolve(image);
+        };
+    });
+}
 function rotateXYZ(matrix, x, y, z) {
     //@ts-ignore
     mat4.rotateX(matrix, matrix, toRadians(x));
@@ -285,6 +330,9 @@ function rotateXYZ(matrix, x, y, z) {
 }
 function toRadians(x) {
     return x * (Math.PI / 180);
+}
+function millisToSeconds(s) {
+    return s * 0.001;
 }
 async function loadFile(url) {
     return new Promise(async (resolve, reject) => {
@@ -317,8 +365,13 @@ async function init() {
     var gl = await createContext();
     var renderer = await Renderer.init(gl, "shader");
     var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), renderer.program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), renderer.program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true));
+    var then = millisToSeconds(Date.now());
+    var delta;
     window.requestAnimationFrame(mainLoop);
     function mainLoop() {
+        delta = millisToSeconds(Date.now()) - then;
+        then = millisToSeconds(Date.now());
+        console.log(1 / delta);
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
         renderer.render(gl, [vao]);

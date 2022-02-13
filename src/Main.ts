@@ -24,21 +24,21 @@ class Program {
             }
         } else if (typeof data === "boolean") {
             gl.uniform1i(location, data ? 1 : 0);
-        //@ts-ignore
-        } else if (data.length === 2){
+            //@ts-ignore
+        } else if (data.length === 2) {
             gl.uniform2fv(location, data);
-        //@ts-ignore
-        } else if (data.length === 3){
+            //@ts-ignore
+        } else if (data.length === 3) {
             gl.uniform3fv(location, data);
-        //@ts-ignore
-        } else if (data.length === 4){
+            //@ts-ignore
+        } else if (data.length === 4) {
             gl.uniform4fv(location, data);
-        //@ts-ignore
-        } else if (data.length === 16){
+            //@ts-ignore
+        } else if (data.length === 16) {
             gl.uniformMatrix4fv(location, false, data);
         }
     }
-    public getUniformLocation(gl:WebGL2RenderingContext, name:string): WebGLUniformLocation{
+    public getUniformLocation(gl: WebGL2RenderingContext, name: string): WebGLUniformLocation {
         return gl.getUniformLocation(this.program, name);
     }
     public delete(gl: WebGL2RenderingContext) {
@@ -191,17 +191,54 @@ class VAO {
                     vao.length = currentVBO.vboData.dataLength;
                 }
             });
-            if(!vao.containsIndexBuffer){
+            if (!vao.containsIndexBuffer) {
                 vao.length = vao.vbos[0].vboData.dataLength / vao.vbos[0].vboData.elementSize;
             }
             resolve(vao);
         });
     }
 }
-class Camera{
-    rot:vec3;
+class Texture {
+    texture: WebGLTexture;
+    isActive:boolean;
+    static activeTextures:number = 0;
+    public activateTexture(gl:WebGL2RenderingContext): void {
+        gl.activeTexture(WebGL2RenderingContext.TEXTURE0 + Texture.activeTextures);
+        gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, this.texture);
+        Texture.activeTextures++;
+    }
+    public disableTexture(gl:WebGL2RenderingContext): void {
+        gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, null);
+        Texture.activeTextures--;
+    }
+    public bindTexture(gl: WebGL2RenderingContext): void {
+        gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, this.texture);
+    }
+    public unbindTexture(gl: WebGL2RenderingContext): void {
+        gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, null);
+    }
+    public static async loadTexture(gl: WebGL2RenderingContext, textureName: string): Promise<Texture> {
+        return new Promise<Texture>(async (resolve, reject) => {
+            var texture: Texture = new Texture();
+            texture.texture = gl.createTexture();
+            texture.bindTexture(gl);
+            var image: HTMLImageElement = await loadImage(textureName);
+            gl.texImage2D(WebGL2RenderingContext.TEXTURE_2D, 0, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.UNSIGNED_BYTE, image);
+            gl.generateMipmap(WebGL2RenderingContext.TEXTURE_2D);
+            texture.unbindTexture(gl);
+        });
+    }
+}
+class Entity{
+    vao:VAO;
     pos:vec3;
-    constructor(pos:vec3, rot:vec3){
+    rot:vec3;
+
+}
+class Camera {
+    rot: vec3;
+    pos: vec3;
+    constructor(pos: vec3, rot: vec3) {
         this.rot = rot;
         this.pos = pos;
     }
@@ -212,51 +249,51 @@ class Camera{
     }
 }
 class Renderer {
-    program:Program;
-    drawMode:number;
+    program: Program;
+    drawMode: number;
     projectionMatrix: mat4;
-    static FOV:number = 90;
-    static NEAR:number = 0.1;
-    static FAR:number = 100;
-    public static async init(gl:WebGL2RenderingContext, programName:string): Promise<Renderer>{
+    static FOV: number = 90;
+    static NEAR: number = 0.1;
+    static FAR: number = 100;
+    public static async init(gl: WebGL2RenderingContext, programName: string): Promise<Renderer> {
         return new Promise<Renderer>(async (resolve, reject) => {
-           var renderer:Renderer = new Renderer();
-           renderer.program = await Program.loadProgram(gl, programName);
-           renderer.drawMode = WebGL2RenderingContext.TRIANGLES;
-           //@ts-ignore
-           renderer.projectionMatrix = mat4.create();
-           //@ts-ignore
-           mat4.perspective(renderer.projectionMatrix, toRadians(90), gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
-           resolve(renderer);
+            var renderer: Renderer = new Renderer();
+            renderer.program = await Program.loadProgram(gl, programName);
+            renderer.drawMode = WebGL2RenderingContext.TRIANGLES;
+            //@ts-ignore
+            renderer.projectionMatrix = mat4.create();
+            //@ts-ignore
+            mat4.perspective(renderer.projectionMatrix, toRadians(90), gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
+            resolve(renderer);
         });
     }
     public static prepareViewport(gl: WebGL2RenderingContext): void {
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     }
-    public static clear(gl:WebGL2RenderingContext): void{
+    public static clear(gl: WebGL2RenderingContext): void {
         gl.clearColor(0, 0, 0, 0);
         gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
     }
-    public delete(gl:WebGL2RenderingContext): void{
+    public delete(gl: WebGL2RenderingContext): void {
         this.program.delete(gl);
     }
-    public render(gl:WebGL2RenderingContext, vaos:VAO[]): void{
+    public render(gl: WebGL2RenderingContext, vaos: VAO[]): void {
         Renderer.prepareViewport(gl);
         Renderer.clear(gl);
         //@ts-ignore
-        var mvm:mat4 = mat4.create();
+        var mvm: mat4 = mat4.create();
         //@ts-ignore
-        mat4.translate(mvm, mvm,  [-0.0, 0.0, -6.0]);
+        mat4.translate(mvm, mvm, [-0.0, 0.0, -6.0]);
         rotateXYZ(mvm, 45, 45, 45);
         this.program.start(gl);
-        vaos.forEach((currentVAO:VAO) => {
+        vaos.forEach((currentVAO: VAO) => {
             currentVAO.enableVAO(gl);
             this.program.loadDataToUniform(gl, this.program.getUniformLocation(gl, "in_projectionMatrix"), this.projectionMatrix);
             this.program.loadDataToUniform(gl, this.program.getUniformLocation(gl, "in_modelViewMatrix"), mvm);
             console.log(mvm.length);
-            if(currentVAO.containsIndexBuffer){
+            if (currentVAO.containsIndexBuffer) {
                 gl.drawElements(WebGL2RenderingContext.TRIANGLES, currentVAO.length, gl.UNSIGNED_SHORT, 0);
-            }else{
+            } else {
                 gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, currentVAO.length);
             }
             currentVAO.disableVAO(gl);
@@ -264,7 +301,16 @@ class Renderer {
         this.program.stop(gl);
     }
 }
-function rotateXYZ(matrix:mat4, x:number, y:number, z:number): void {
+async function loadImage(imageName: string): Promise<HTMLImageElement> {
+    return new Promise<HTMLImageElement>((resolve, reject) => {
+        var image: HTMLImageElement = new Image();
+        image.src = `res/shaders/${imageName}.png`;
+        image.onload = () => {
+            resolve(image);
+        };
+    });
+}
+function rotateXYZ(matrix: mat4, x: number, y: number, z: number): void {
     //@ts-ignore
     mat4.rotateX(matrix, matrix, toRadians(x));
     //@ts-ignore
@@ -272,8 +318,11 @@ function rotateXYZ(matrix:mat4, x:number, y:number, z:number): void {
     //@ts-ignore
     mat4.rotateZ(matrix, matrix, toRadians(z));
 }
-function toRadians(x:number): number{
+function toRadians(x: number): number {
     return x * (Math.PI / 180);
+}
+function millisToSeconds(s:number): number {
+    return s * 0.001;
 }
 async function loadFile(url: string): Promise<string> {
     return new Promise<string>(async (resolve, reject) => {
@@ -302,14 +351,19 @@ async function createContext(): Promise<WebGL2RenderingContext> {
 }
 async function init(): Promise<void> {
     var gl: WebGL2RenderingContext = await createContext();
-    var renderer:Renderer = await Renderer.init(gl, "shader");
+    var renderer: Renderer = await Renderer.init(gl, "shader");
     var vao: VAO = await VAO.loadVAOFromArray(gl,
         new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), renderer.program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false),
         new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false),
         new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), renderer.program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
     );
+    var then:number = millisToSeconds(Date.now());
+    var delta:number;
     window.requestAnimationFrame(mainLoop);
-    function mainLoop() : void{
+    function mainLoop(): void {
+        delta = millisToSeconds(Date.now()) - then;
+        then = millisToSeconds(Date.now());
+        console.log(1 / delta);
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
         renderer.render(gl, [vao]);
