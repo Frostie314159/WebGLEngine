@@ -172,6 +172,31 @@ class VAO {
         });
         gl.deleteVertexArray(this.vao);
     }
+    public static async loadVAOFromOBJFile(gl:WebGL2RenderingContext, program:Program, objName:string): Promise<number>{
+        return new Promise<number>(async (resolve, reject) => {
+            var vertices:number[] = [];
+            var indices:number[] = [];
+            var objFileContents:string = await loadFile(`res/assets/${objName}`);
+            objFileContents.split(/\r\n|\r|\n/).forEach((currentLine:string) => {
+                if(currentLine.startsWith("v")){
+                    var lineSplit:string[] = currentLine.split(" ");
+                    vertices.push(Number.parseFloat(lineSplit[1]));
+                    vertices.push(Number.parseFloat(lineSplit[2]));
+                    vertices.push(Number.parseFloat(lineSplit[3]));
+                }else if(currentLine.startsWith("f")){
+                    var lineSplit:string[] = currentLine.split("/");
+                    indices.push(Number(lineSplit[0]));
+                    indices.push(Number(lineSplit[1]));
+                    indices.push(Number(lineSplit[2]));
+                }
+            });
+            console.log(indices);
+            return await VAO.loadVAOFromArray(gl, 
+                new VBOData(gl, new Float32Array(vertices), program, "in_pos", 3, WebGL2RenderingContext.FLOAT), 
+                new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
+            );
+        });
+    }
     public static async loadVAOFromArray(gl: WebGL2RenderingContext, ...vboData: VBOData[]): Promise<number> {
         return new Promise<number>(async (resolve, reject) => {
             var vao: VAO = new VAO();
@@ -262,11 +287,29 @@ class Entity{
 class Camera {
     rot: vec3;
     pos: vec3;
+    static SPEED:number = 5;
     constructor(pos: vec3, rot: vec3) {
         this.rot = rot;
         this.pos = pos;
+        this.pos[0] -= 5 * 0.01699995994567871;
+        console.log(this.pos);
     }
-    //@ts-ignore
+    public keyCallback(code:string, delta:number): void {
+        switch(code){
+            case "KeyA":
+                this.pos[0] -= (Camera.SPEED*10) * (delta*10) / 100;
+            case "KeyD":
+                this.pos[0] += Camera.SPEED * delta;
+            case "Space":
+                this.pos[1] -= Camera.SPEED * delta;
+            case "SiftLeft":
+                this.pos[1] += Camera.SPEED * delta;
+            case "KeyW":
+                this.pos[2] -= Camera.SPEED * delta;
+            case "KeyS":
+                this.pos[2] += Camera.SPEED * delta;
+        }
+    }
     public getViewMatrix(): mat4 {
         //@ts-ignore
         var viewMatrix:mat4 = mat4.create();
@@ -398,36 +441,23 @@ async function createContext(): Promise<WebGL2RenderingContext> {
 async function init(): Promise<void> {
     var gl: WebGL2RenderingContext = await createContext();
     var renderer: Renderer = await Renderer.init(gl, "shader");
-    var camera:Camera = new Camera([0,0,0], [0, 0, 0]);
+    var camera:Camera = new Camera([-5,0,0], [0, 0, 0]);
     var vao: number = await VAO.loadVAOFromArray(gl,
         new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), renderer.program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false),
-        new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false),
+        /*new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false),*/
         new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), renderer.program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
     );
     var entities:Entity[] = [];
     entities.push(new Entity(new Model(vao), [0, 0, -6], [45, 45, 45]));
     entities.push(new Entity(new Model(vao), [-2, 0, -6], [45, 45, 45]));
-    entities.push(new Entity(new Model(vao), [2, 0, -6], [0, 0, 0]));
+    entities.push(new Entity(new Model(await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj")), [2, 0, -6], [0, 0, 0]));
     entities.push(new Entity(new Model(vao), [4, 0, -6], [45, 45, 45]));
     entities.push(new Entity(new Model(vao), [6, 0, -6], [45, 45, 45]));
     var then:number = millisToSeconds(Date.now());
-    var delta:number;
+    var delta:number = 0;
+    //@ts-ignore
     document.onkeydown = (ev:KeyboardEvent) => {
-        switch(ev.code){
-            case "KeyA":
-                camera.pos[0] = 5 * delta;
-                console.log(delta);
-            case "KeyD":
-                camera.pos[0] += 5 * delta;
-            case "Space":
-                camera.pos[1] -= 5 * delta;
-            case "ShiftLeft":
-                camera.pos[1] += 5 * delta;
-            case "KeyW":
-                camera.pos[2] -= 5 * delta;
-            case "KeyS":
-                camera.pos[2] += 5* delta;
-        }
+        camera.keyCallback(ev.code, delta);
     };
     window.requestAnimationFrame(mainLoop);
     function mainLoop(): void {
