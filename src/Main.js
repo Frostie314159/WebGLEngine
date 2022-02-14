@@ -265,7 +265,7 @@ class Entity {
         var transformationMatrix = mat4.create();
         //@ts-ignore
         mat4.translate(transformationMatrix, transformationMatrix, this.pos);
-        rotateXYZ(transformationMatrix, this.rot[0], this.rot[1], this.rot[2]);
+        rotateXYZ(transformationMatrix, this.rot);
         return transformationMatrix;
     }
 }
@@ -279,14 +279,19 @@ class Camera {
     //@ts-ignore
     getViewMatrix() {
         //@ts-ignore
-        return mat4.translate(mat4.create(), rotateXYZ(this.rot[0], this.rot[1], this.rot[2]), this.pos);
+        var viewMatrix = mat4.create();
+        //@ts-ignore
+        mat4.translate(viewMatrix, viewMatrix, this.pos);
+        rotateXYZ(viewMatrix, this.rot);
+        //@ts-ignore
+        return mat4.invert(viewMatrix, viewMatrix);
     }
 }
 class Renderer {
     program;
     drawMode;
     projectionMatrix;
-    projectionMatrixLocation;
+    projectionViewMatrixLocation;
     transformationMatrixLocation;
     entityMap;
     static FOV = 90;
@@ -301,7 +306,7 @@ class Renderer {
             renderer.projectionMatrix = mat4.create();
             //@ts-ignore
             mat4.perspective(renderer.projectionMatrix, toRadians(90), gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
-            renderer.projectionMatrixLocation = renderer.program.getUniformLocation(gl, "in_projectionMatrix");
+            renderer.projectionViewMatrixLocation = renderer.program.getUniformLocation(gl, "in_projectionViewMatrix");
             renderer.transformationMatrixLocation = renderer.program.getUniformLocation(gl, "in_modelViewMatrix");
             resolve(renderer);
         });
@@ -319,30 +324,36 @@ class Renderer {
     prepareEntities(entities) {
         this.entityMap = new Map();
         entities.forEach((currentEntity) => {
-            if (!this.entityMap.has(currentEntity.model)) {
-                this.entityMap.set(currentEntity.model, []);
+            if (!this.entityMap.has(currentEntity.model.vaoID)) {
+                this.entityMap.set(currentEntity.model.vaoID, []);
             }
-            this.entityMap.get(currentEntity.model).push(currentEntity);
+            this.entityMap.get(currentEntity.model.vaoID).push(currentEntity);
         });
     }
-    render(gl, entities) {
+    render(gl, camera, entities) {
         this.prepareEntities(entities);
         Renderer.prepareViewport(gl);
         Renderer.clear(gl);
+        gl.enable(WebGL2RenderingContext.DEPTH_TEST);
+        gl.depthFunc(WebGL2RenderingContext.LEQUAL);
         this.program.start(gl);
-        this.entityMap.forEach((currentEntities, currentModel) => {
-            VAO.vaos[currentModel.vaoID].enableVAO(gl);
+        //@ts-ignore
+        var projectionViewMatrix = mat4.create();
+        //@ts-ignore
+        mat4.mul(projectionViewMatrix, this.projectionMatrix, camera.getViewMatrix());
+        this.entityMap.forEach((currentEntities, currentVAOID) => {
+            VAO.vaos[currentVAOID].enableVAO(gl);
             currentEntities.forEach((currentEntity) => {
-                this.program.loadDataToUniform(gl, this.projectionMatrixLocation, this.projectionMatrix);
+                this.program.loadDataToUniform(gl, this.projectionViewMatrixLocation, projectionViewMatrix);
                 this.program.loadDataToUniform(gl, this.transformationMatrixLocation, currentEntity.createTransformationMatrix());
-                if (VAO.vaos[currentModel.vaoID].containsIndexBuffer) {
-                    gl.drawElements(WebGL2RenderingContext.TRIANGLES, VAO.vaos[currentModel.vaoID].length, gl.UNSIGNED_SHORT, 0);
+                if (VAO.vaos[currentVAOID].containsIndexBuffer) {
+                    gl.drawElements(WebGL2RenderingContext.TRIANGLES, VAO.vaos[currentVAOID].length, gl.UNSIGNED_SHORT, 0);
                 }
                 else {
-                    gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, VAO.vaos[currentModel.vaoID].length);
+                    gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, VAO.vaos[currentVAOID].length);
                 }
             });
-            VAO.vaos[currentModel.vaoID].disableVAO(gl);
+            VAO.vaos[currentVAOID].disableVAO(gl);
         });
         this.program.stop(gl);
     }
@@ -356,13 +367,13 @@ async function loadImage(imageName) {
         };
     });
 }
-function rotateXYZ(matrix, x, y, z) {
+function rotateXYZ(matrix, rot) {
     //@ts-ignore
-    mat4.rotateX(matrix, matrix, toRadians(x));
+    mat4.rotateX(matrix, matrix, toRadians(rot[0]));
     //@ts-ignore
-    mat4.rotateY(matrix, matrix, toRadians(y));
+    mat4.rotateY(matrix, matrix, toRadians(rot[1]));
     //@ts-ignore
-    mat4.rotateZ(matrix, matrix, toRadians(z));
+    mat4.rotateZ(matrix, matrix, toRadians(rot[2]));
 }
 function toRadians(x) {
     return x * (Math.PI / 180);
@@ -400,22 +411,40 @@ async function createContext() {
 async function init() {
     var gl = await createContext();
     var renderer = await Renderer.init(gl, "shader");
+    var camera = new Camera([0, 0, 0], [0, 0, 0]);
     var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), renderer.program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false), new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), renderer.program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true));
-    //@ts-ignore 
-    var testEntity = new Entity(new Model(vao), [-0.0, 0.0, -6.0], vec3.fromValues(45, 45, 45));
-    //@ts-ignore
-    var testEntity2 = new Entity(new Model(vao), [-2.0, 0.0, -6.0], vec3.fromValues(45, 45, 45));
+    var entities = [];
+    entities.push(new Entity(new Model(vao), [0, 0, -6], [45, 45, 45]));
+    entities.push(new Entity(new Model(vao), [-2, 0, -6], [45, 45, 45]));
+    entities.push(new Entity(new Model(vao), [2, 0, -6], [0, 0, 0]));
+    entities.push(new Entity(new Model(vao), [4, 0, -6], [45, 45, 45]));
+    entities.push(new Entity(new Model(vao), [6, 0, -6], [45, 45, 45]));
     var then = millisToSeconds(Date.now());
     var delta;
-    console.log(testEntity.createTransformationMatrix());
+    document.onkeydown = (ev) => {
+        switch (ev.code) {
+            case "KeyA":
+                camera.pos[0] = 5 * delta;
+                console.log(delta);
+            case "KeyD":
+                camera.pos[0] += 5 * delta;
+            case "Space":
+                camera.pos[1] -= 5 * delta;
+            case "ShiftLeft":
+                camera.pos[1] += 5 * delta;
+            case "KeyW":
+                camera.pos[2] -= 5 * delta;
+            case "KeyS":
+                camera.pos[2] += 5 * delta;
+        }
+    };
     window.requestAnimationFrame(mainLoop);
     function mainLoop() {
         delta = millisToSeconds(Date.now()) - then;
         then = millisToSeconds(Date.now());
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
-        renderer.render(gl, [testEntity, testEntity2]);
-        console.log(renderer.entityMap);
+        renderer.render(gl, camera, entities);
         window.requestAnimationFrame(mainLoop);
     }
 }
