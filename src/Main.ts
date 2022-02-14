@@ -147,6 +147,7 @@ class VAO {
     vao: WebGLVertexArrayObject;
     length: number;
     containsIndexBuffer: boolean;
+    static vaos:VAO[] = [];
     public bindVAO(gl: WebGL2RenderingContext): void {
         gl.bindVertexArray(this.vao);
     }
@@ -171,8 +172,8 @@ class VAO {
         });
         gl.deleteVertexArray(this.vao);
     }
-    public static async loadVAOFromArray(gl: WebGL2RenderingContext, ...vboData: VBOData[]): Promise<VAO> {
-        return new Promise<VAO>(async (resolve, reject) => {
+    public static async loadVAOFromArray(gl: WebGL2RenderingContext, ...vboData: VBOData[]): Promise<number> {
+        return new Promise<number>(async (resolve, reject) => {
             var vao: VAO = new VAO();
             vao.vao = gl.createVertexArray();
             vao.containsIndexBuffer = false;
@@ -194,7 +195,8 @@ class VAO {
             if (!vao.containsIndexBuffer) {
                 vao.length = vao.vbos[0].vboData.dataLength / vao.vbos[0].vboData.elementSize;
             }
-            resolve(vao);
+            VAO.vaos.push(vao);
+            resolve(VAO.vaos.length - 1);
         });
     }
 }
@@ -229,11 +231,33 @@ class Texture {
         });
     }
 }
+class Model{
+    vaoID:number;
+    constructor(vaoID:number){
+        this.vaoID = vaoID;
+    }
+}
 class Entity{
-    vao:VAO;
+    model:Model;
     pos:vec3;
     rot:vec3;
-
+    static G = 9.81;
+    constructor(model:Model, pos:vec3, rot:vec3){
+        this.model = model;
+        this.pos = pos;
+        this.rot = rot;
+    }
+    public update(deltaTime:number): void {
+        this.pos[1] -= Entity.G * deltaTime;
+    }
+    public createTransformationMatrix(): mat4{
+        //@ts-ignore
+        var transformationMatrix:mat4 = mat4.create();
+        //@ts-ignore
+        mat4.translate(transformationMatrix, transformationMatrix, this.pos);
+        rotateXYZ(transformationMatrix, this.rot[0], this.rot[1], this.rot[2]);
+        return transformationMatrix;
+    }
 }
 class Camera {
     rot: vec3;
@@ -252,6 +276,9 @@ class Renderer {
     program: Program;
     drawMode: number;
     projectionMatrix: mat4;
+    projectionMatrixLocation:WebGLUniformLocation;
+    transformationMatrixLocation:WebGLUniformLocation;
+    entityMap:Map<Model, Entity[]>;
     static FOV: number = 90;
     static NEAR: number = 0.1;
     static FAR: number = 100;
@@ -264,6 +291,8 @@ class Renderer {
             renderer.projectionMatrix = mat4.create();
             //@ts-ignore
             mat4.perspective(renderer.projectionMatrix, toRadians(90), gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
+            renderer.projectionMatrixLocation = renderer.program.getUniformLocation(gl, "in_projectionMatrix");
+            renderer.transformationMatrixLocation = renderer.program.getUniformLocation(gl, "in_modelViewMatrix");
             resolve(renderer);
         });
     }
@@ -277,26 +306,34 @@ class Renderer {
     public delete(gl: WebGL2RenderingContext): void {
         this.program.delete(gl);
     }
-    public render(gl: WebGL2RenderingContext, vaos: VAO[]): void {
+    public prepareEntities(entities:Entity[]): void {
+        this.entityMap = new Map<Model, Entity[]>();
+        entities.forEach((currentEntity:Entity) => {
+            if(!((map:Map<Model, Entity[]>, key:Model): boolean => {
+                map.
+            })){
+                this.entityMap.set(currentEntity.model, []);
+            }
+            this.entityMap.get(currentEntity.model).push(currentEntity);
+        });
+    }
+    public render(gl: WebGL2RenderingContext, entities: Entity[]): void {
+        this.prepareEntities(entities);
         Renderer.prepareViewport(gl);
         Renderer.clear(gl);
-        //@ts-ignore
-        var mvm: mat4 = mat4.create();
-        //@ts-ignore
-        mat4.translate(mvm, mvm, [-0.0, 0.0, -6.0]);
-        rotateXYZ(mvm, 45, 45, 45);
         this.program.start(gl);
-        vaos.forEach((currentVAO: VAO) => {
-            currentVAO.enableVAO(gl);
-            this.program.loadDataToUniform(gl, this.program.getUniformLocation(gl, "in_projectionMatrix"), this.projectionMatrix);
-            this.program.loadDataToUniform(gl, this.program.getUniformLocation(gl, "in_modelViewMatrix"), mvm);
-            console.log(mvm.length);
-            if (currentVAO.containsIndexBuffer) {
-                gl.drawElements(WebGL2RenderingContext.TRIANGLES, currentVAO.length, gl.UNSIGNED_SHORT, 0);
-            } else {
-                gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, currentVAO.length);
-            }
-            currentVAO.disableVAO(gl);
+        this.entityMap.forEach((currentEntities:Entity[], currentModel:Model) => {
+            VAO.vaos[currentModel.vaoID].enableVAO(gl);
+            currentEntities.forEach((currentEntity:Entity) => {
+                this.program.loadDataToUniform(gl, this.projectionMatrixLocation, this.projectionMatrix);
+                this.program.loadDataToUniform(gl, this.transformationMatrixLocation, currentEntity.createTransformationMatrix());
+                if (VAO.vaos[currentModel.vaoID].containsIndexBuffer) {
+                    gl.drawElements(WebGL2RenderingContext.TRIANGLES, VAO.vaos[currentModel.vaoID].length, gl.UNSIGNED_SHORT, 0);
+                } else {
+                    gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, VAO.vaos[currentModel.vaoID].length);
+                }
+            });
+            VAO.vaos[currentModel.vaoID].disableVAO(gl);
         });
         this.program.stop(gl);
     }
@@ -352,21 +389,26 @@ async function createContext(): Promise<WebGL2RenderingContext> {
 async function init(): Promise<void> {
     var gl: WebGL2RenderingContext = await createContext();
     var renderer: Renderer = await Renderer.init(gl, "shader");
-    var vao: VAO = await VAO.loadVAOFromArray(gl,
+    var vao: number = await VAO.loadVAOFromArray(gl,
         new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), renderer.program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false),
         new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false),
         new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), renderer.program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
     );
+    //@ts-ignore 
+    var testEntity:Entity = new Entity(new Model(vao), [-0.0, 0.0, -6.0], vec3.fromValues(45, 45, 45));
+    //@ts-ignore
+    var testEntity2:Entity = new Entity(new Model(vao), [-2.0, 0.0, -6.0], vec3.fromValues(45, 45, 45));
     var then:number = millisToSeconds(Date.now());
     var delta:number;
+    console.log(testEntity.createTransformationMatrix());
     window.requestAnimationFrame(mainLoop);
     function mainLoop(): void {
         delta = millisToSeconds(Date.now()) - then;
         then = millisToSeconds(Date.now());
-        console.log(1 / delta);
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
-        renderer.render(gl, [vao]);
+        renderer.render(gl, [testEntity, testEntity2]);
+        console.log(renderer.entityMap);
         window.requestAnimationFrame(mainLoop);
     }
 }
