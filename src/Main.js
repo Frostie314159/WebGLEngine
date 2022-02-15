@@ -198,13 +198,14 @@ class VAO {
                     vertices.push(Number.parseFloat(lineSplit[3]));
                 }
                 else if (currentLine.startsWith("f")) {
-                    var lineSplit = currentLine.split("/");
-                    indices.push(Number(lineSplit[0].substring(1)));
-                    indices.push(Number(lineSplit[1]));
-                    indices.push(Number(lineSplit[2].substring(0, 1)));
+                    var lineSplit = currentLine.split(" ");
+                    console.log(lineSplit);
+                    indices.push(Number(lineSplit[1].split("/")[0]) - 1);
+                    indices.push(Number(lineSplit[2].split("/")[0]) - 1);
+                    indices.push(Number(lineSplit[3].split("/")[0]) - 1);
                 }
             });
-            return await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array(vertices), program, "in_pos", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true));
+            resolve(await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array(vertices), program, "in_pos", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)));
         });
     }
     static async loadVAOFromArray(gl, ...vboData) {
@@ -296,37 +297,33 @@ class Entity {
 }
 class Camera {
     rot;
-    x;
-    y;
-    z;
+    pos;
     static SPEED = 5;
     constructor(pos, rot) {
         this.rot = rot;
-        this.x = pos[0];
-        this.y = pos[1];
-        this.z = pos[2];
+        this.pos = pos;
     }
     keyCallback(code, delta) {
         switch (code) {
             case "KeyA":
-                this.x -= Camera.SPEED * delta;
+                this.pos[0] -= Camera.SPEED * delta;
             case "KeyD":
-                this.x += Camera.SPEED * delta;
+                this.pos[0] += Camera.SPEED * delta;
             case "Space":
-                this.y -= Camera.SPEED * delta;
+                this.pos[1] -= Camera.SPEED * delta;
             case "SiftLeft":
-                this.y += Camera.SPEED * delta;
+                this.pos[1] += Camera.SPEED * delta;
             case "KeyW":
-                this.z -= Camera.SPEED * delta;
+                this.pos[2] -= Camera.SPEED * delta;
             case "KeyS":
-                this.z += Camera.SPEED * delta;
+                this.pos[2] += Camera.SPEED * delta;
         }
     }
     getViewMatrix() {
         //@ts-ignore
         var viewMatrix = mat4.create();
         //@ts-ignore
-        mat4.translate(viewMatrix, viewMatrix, vec3.fromValues(this.x, this.y, this.z));
+        mat4.translate(viewMatrix, viewMatrix, this.pos);
         rotateXYZ(viewMatrix, this.rot);
         //@ts-ignore
         return mat4.invert(viewMatrix, viewMatrix);
@@ -460,26 +457,35 @@ async function init() {
     var gl = await createContext();
     var renderer = await Renderer.init(gl, "shader");
     //@ts-ignore
-    var camera = new Camera(vec3.fromValues(0, 0, 0), [0, 0, 0]);
+    var camera = new Camera(vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, 0));
     var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), renderer.program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false), 
     /*new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false),*/
     new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), renderer.program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true));
     var objVBO = await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj");
-    console.log(VAO.vaos);
     var entities = [];
     entities.push(new Entity(new Model(vao), [0, 0, -6], [45, 45, 45]));
     entities.push(new Entity(new Model(vao), [-2, 0, -6], [45, 45, 45]));
-    //entities.push(new Entity(new Model(objVBO), [2, 0, -6], [0, 0, 0]));
+    entities.push(new Entity(new Model(objVBO), [2, 0, -6], [0, 0, 180]));
     entities.push(new Entity(new Model(vao), [4, 0, -6], [45, 45, 45]));
     entities.push(new Entity(new Model(vao), [6, 0, -6], [45, 45, 45]));
-    console.log(VAO.getVAO(0));
     var then = millisToSeconds(Date.now());
     var delta = 1;
     document.body.onresize = () => {
         renderer.updateProjectionMatrix(gl);
     };
     window.onkeydown = (ev) => {
-        camera.keyCallback(ev.code, delta);
+        if (ev.code === "KeyA") {
+            camera.pos[0] -= Camera.SPEED * delta;
+        }
+        else if (ev.code === "KeyD") {
+            camera.pos[0] += Camera.SPEED * delta;
+        }
+        else if (ev.code === "KeyW") {
+            camera.pos[2] -= Camera.SPEED * delta;
+        }
+        else if (ev.code === "KeyS") {
+            camera.pos[2] += Camera.SPEED * delta;
+        }
     };
     window.requestAnimationFrame(mainLoop);
     function mainLoop() {
