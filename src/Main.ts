@@ -172,25 +172,27 @@ class VAO {
         });
         gl.deleteVertexArray(this.vao);
     }
+    public static getVAO(vaoID:number): VAO {
+        return VAO.vaos[vaoID];
+    }
     public static async loadVAOFromOBJFile(gl:WebGL2RenderingContext, program:Program, objName:string): Promise<number>{
         return new Promise<number>(async (resolve, reject) => {
             var vertices:number[] = [];
             var indices:number[] = [];
             var objFileContents:string = await loadFile(`res/assets/${objName}`);
             objFileContents.split(/\r\n|\r|\n/).forEach((currentLine:string) => {
-                if(currentLine.startsWith("v")){
+                if(currentLine.startsWith("v ")){
                     var lineSplit:string[] = currentLine.split(" ");
                     vertices.push(Number.parseFloat(lineSplit[1]));
                     vertices.push(Number.parseFloat(lineSplit[2]));
                     vertices.push(Number.parseFloat(lineSplit[3]));
                 }else if(currentLine.startsWith("f")){
                     var lineSplit:string[] = currentLine.split("/");
-                    indices.push(Number(lineSplit[0]));
+                    indices.push(Number(lineSplit[0].substring(1)));
                     indices.push(Number(lineSplit[1]));
-                    indices.push(Number(lineSplit[2]));
+                    indices.push(Number(lineSplit[2].substring(0,1)));
                 }
             });
-            console.log(indices);
             return await VAO.loadVAOFromArray(gl, 
                 new VBOData(gl, new Float32Array(vertices), program, "in_pos", 3, WebGL2RenderingContext.FLOAT), 
                 new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
@@ -286,35 +288,37 @@ class Entity{
 }
 class Camera {
     rot: vec3;
-    pos: vec3;
+    x: number;
+    y: number;
+    z: number;
     static SPEED:number = 5;
     constructor(pos: vec3, rot: vec3) {
         this.rot = rot;
-        this.pos = pos;
-        this.pos[0] -= 5 * 0.01699995994567871;
-        console.log(this.pos);
+        this.x = pos[0];
+        this.y = pos[1];
+        this.z = pos[2];
     }
     public keyCallback(code:string, delta:number): void {
         switch(code){
             case "KeyA":
-                this.pos[0] -= (Camera.SPEED*10) * (delta*10) / 100;
+                this.x -= Camera.SPEED * delta;
             case "KeyD":
-                this.pos[0] += Camera.SPEED * delta;
+                this.x += Camera.SPEED * delta;
             case "Space":
-                this.pos[1] -= Camera.SPEED * delta;
+                this.y -= Camera.SPEED * delta;
             case "SiftLeft":
-                this.pos[1] += Camera.SPEED * delta;
+                this.y += Camera.SPEED * delta;
             case "KeyW":
-                this.pos[2] -= Camera.SPEED * delta;
+                this.z -= Camera.SPEED * delta;
             case "KeyS":
-                this.pos[2] += Camera.SPEED * delta;
+                this.z += Camera.SPEED * delta;
         }
     }
     public getViewMatrix(): mat4 {
         //@ts-ignore
         var viewMatrix:mat4 = mat4.create();
         //@ts-ignore
-        mat4.translate(viewMatrix, viewMatrix, this.pos);
+        mat4.translate(viewMatrix, viewMatrix, vec3.fromValues(this.x, this.y, this.z));
         rotateXYZ(viewMatrix, this.rot);
         //@ts-ignore
         return mat4.invert(viewMatrix, viewMatrix);
@@ -334,11 +338,10 @@ class Renderer {
         return new Promise<Renderer>(async (resolve, reject) => {
             var renderer: Renderer = new Renderer();
             renderer.program = await Program.loadProgram(gl, programName);
-            renderer.drawMode = WebGL2RenderingContext.TRIANGLES;
+            renderer.drawMode = WebGL2RenderingContext.LINES;
             //@ts-ignore
             renderer.projectionMatrix = mat4.create();
-            //@ts-ignore
-            mat4.perspective(renderer.projectionMatrix, toRadians(90), gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
+            renderer.updateProjectionMatrix(gl);
             renderer.projectionViewMatrixLocation = renderer.program.getUniformLocation(gl, "in_projectionViewMatrix");
             renderer.transformationMatrixLocation = renderer.program.getUniformLocation(gl, "in_modelViewMatrix");
             resolve(renderer);
@@ -353,6 +356,10 @@ class Renderer {
     }
     public delete(gl: WebGL2RenderingContext): void {
         this.program.delete(gl);
+    }
+    public updateProjectionMatrix(gl:WebGL2RenderingContext): void{
+        //@ts-ignore
+        mat4.perspective(this.projectionMatrix, toRadians(Renderer.FOV), gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
     }
     public prepareEntities(entities:Entity[]): void {
         this.entityMap = new Map<number, Entity[]>();
@@ -441,22 +448,28 @@ async function createContext(): Promise<WebGL2RenderingContext> {
 async function init(): Promise<void> {
     var gl: WebGL2RenderingContext = await createContext();
     var renderer: Renderer = await Renderer.init(gl, "shader");
-    var camera:Camera = new Camera([-5,0,0], [0, 0, 0]);
+    //@ts-ignore
+    var camera:Camera = new Camera(vec3.fromValues(0, 0, 0), [0, 0, 0]);
     var vao: number = await VAO.loadVAOFromArray(gl,
         new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), renderer.program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false),
         /*new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false),*/
         new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), renderer.program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
     );
+    var objVBO:number = await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj");
+    console.log(VAO.vaos);
     var entities:Entity[] = [];
     entities.push(new Entity(new Model(vao), [0, 0, -6], [45, 45, 45]));
     entities.push(new Entity(new Model(vao), [-2, 0, -6], [45, 45, 45]));
-    entities.push(new Entity(new Model(await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj")), [2, 0, -6], [0, 0, 0]));
+    //entities.push(new Entity(new Model(objVBO), [2, 0, -6], [0, 0, 0]));
     entities.push(new Entity(new Model(vao), [4, 0, -6], [45, 45, 45]));
     entities.push(new Entity(new Model(vao), [6, 0, -6], [45, 45, 45]));
+    console.log(VAO.getVAO(0));
     var then:number = millisToSeconds(Date.now());
-    var delta:number = 0;
-    //@ts-ignore
-    document.onkeydown = (ev:KeyboardEvent) => {
+    var delta:number = 1;
+    document.body.onresize = () => {
+        renderer.updateProjectionMatrix(gl);
+    };
+    window.onkeydown = (ev:KeyboardEvent) => {
         camera.keyCallback(ev.code, delta);
     };
     window.requestAnimationFrame(mainLoop);

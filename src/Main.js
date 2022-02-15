@@ -182,13 +182,16 @@ class VAO {
         });
         gl.deleteVertexArray(this.vao);
     }
+    static getVAO(vaoID) {
+        return VAO.vaos[vaoID];
+    }
     static async loadVAOFromOBJFile(gl, program, objName) {
         return new Promise(async (resolve, reject) => {
             var vertices = [];
             var indices = [];
             var objFileContents = await loadFile(`res/assets/${objName}`);
             objFileContents.split(/\r\n|\r|\n/).forEach((currentLine) => {
-                if (currentLine.startsWith("v")) {
+                if (currentLine.startsWith("v ")) {
                     var lineSplit = currentLine.split(" ");
                     vertices.push(Number.parseFloat(lineSplit[1]));
                     vertices.push(Number.parseFloat(lineSplit[2]));
@@ -196,12 +199,11 @@ class VAO {
                 }
                 else if (currentLine.startsWith("f")) {
                     var lineSplit = currentLine.split("/");
-                    indices.push(Number(lineSplit[0]));
+                    indices.push(Number(lineSplit[0].substring(1)));
                     indices.push(Number(lineSplit[1]));
-                    indices.push(Number(lineSplit[2]));
+                    indices.push(Number(lineSplit[2].substring(0, 1)));
                 }
             });
-            console.log(indices);
             return await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array(vertices), program, "in_pos", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true));
         });
     }
@@ -294,35 +296,37 @@ class Entity {
 }
 class Camera {
     rot;
-    pos;
+    x;
+    y;
+    z;
     static SPEED = 5;
     constructor(pos, rot) {
         this.rot = rot;
-        this.pos = pos;
-        this.pos[0] -= 5 * 0.01699995994567871;
-        console.log(this.pos);
+        this.x = pos[0];
+        this.y = pos[1];
+        this.z = pos[2];
     }
     keyCallback(code, delta) {
         switch (code) {
             case "KeyA":
-                this.pos[0] -= (Camera.SPEED * 10) * (delta * 10) / 100;
+                this.x -= Camera.SPEED * delta;
             case "KeyD":
-                this.pos[0] += Camera.SPEED * delta;
+                this.x += Camera.SPEED * delta;
             case "Space":
-                this.pos[1] -= Camera.SPEED * delta;
+                this.y -= Camera.SPEED * delta;
             case "SiftLeft":
-                this.pos[1] += Camera.SPEED * delta;
+                this.y += Camera.SPEED * delta;
             case "KeyW":
-                this.pos[2] -= Camera.SPEED * delta;
+                this.z -= Camera.SPEED * delta;
             case "KeyS":
-                this.pos[2] += Camera.SPEED * delta;
+                this.z += Camera.SPEED * delta;
         }
     }
     getViewMatrix() {
         //@ts-ignore
         var viewMatrix = mat4.create();
         //@ts-ignore
-        mat4.translate(viewMatrix, viewMatrix, this.pos);
+        mat4.translate(viewMatrix, viewMatrix, vec3.fromValues(this.x, this.y, this.z));
         rotateXYZ(viewMatrix, this.rot);
         //@ts-ignore
         return mat4.invert(viewMatrix, viewMatrix);
@@ -342,11 +346,10 @@ class Renderer {
         return new Promise(async (resolve, reject) => {
             var renderer = new Renderer();
             renderer.program = await Program.loadProgram(gl, programName);
-            renderer.drawMode = WebGL2RenderingContext.TRIANGLES;
+            renderer.drawMode = WebGL2RenderingContext.LINES;
             //@ts-ignore
             renderer.projectionMatrix = mat4.create();
-            //@ts-ignore
-            mat4.perspective(renderer.projectionMatrix, toRadians(90), gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
+            renderer.updateProjectionMatrix(gl);
             renderer.projectionViewMatrixLocation = renderer.program.getUniformLocation(gl, "in_projectionViewMatrix");
             renderer.transformationMatrixLocation = renderer.program.getUniformLocation(gl, "in_modelViewMatrix");
             resolve(renderer);
@@ -361,6 +364,10 @@ class Renderer {
     }
     delete(gl) {
         this.program.delete(gl);
+    }
+    updateProjectionMatrix(gl) {
+        //@ts-ignore
+        mat4.perspective(this.projectionMatrix, toRadians(Renderer.FOV), gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
     }
     prepareEntities(entities) {
         this.entityMap = new Map();
@@ -452,20 +459,26 @@ async function createContext() {
 async function init() {
     var gl = await createContext();
     var renderer = await Renderer.init(gl, "shader");
-    var camera = new Camera([-5, 0, 0], [0, 0, 0]);
+    //@ts-ignore
+    var camera = new Camera(vec3.fromValues(0, 0, 0), [0, 0, 0]);
     var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), renderer.program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false), 
     /*new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false),*/
     new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), renderer.program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true));
+    var objVBO = await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj");
+    console.log(VAO.vaos);
     var entities = [];
     entities.push(new Entity(new Model(vao), [0, 0, -6], [45, 45, 45]));
     entities.push(new Entity(new Model(vao), [-2, 0, -6], [45, 45, 45]));
-    entities.push(new Entity(new Model(await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj")), [2, 0, -6], [0, 0, 0]));
+    //entities.push(new Entity(new Model(objVBO), [2, 0, -6], [0, 0, 0]));
     entities.push(new Entity(new Model(vao), [4, 0, -6], [45, 45, 45]));
     entities.push(new Entity(new Model(vao), [6, 0, -6], [45, 45, 45]));
+    console.log(VAO.getVAO(0));
     var then = millisToSeconds(Date.now());
-    var delta = 0;
-    //@ts-ignore
-    document.onkeydown = (ev) => {
+    var delta = 1;
+    document.body.onresize = () => {
+        renderer.updateProjectionMatrix(gl);
+    };
+    window.onkeydown = (ev) => {
         camera.keyCallback(ev.code, delta);
     };
     window.requestAnimationFrame(mainLoop);
