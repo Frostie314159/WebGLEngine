@@ -24,16 +24,12 @@ class Program {
             }
         } else if (typeof data === "boolean") {
             gl.uniform1i(location, data ? 1 : 0);
-            //@ts-ignore
         } else if (data.length === 2) {
             gl.uniform2fv(location, data);
-            //@ts-ignore
         } else if (data.length === 3) {
             gl.uniform3fv(location, data);
-            //@ts-ignore
         } else if (data.length === 4) {
             gl.uniform4fv(location, data);
-            //@ts-ignore
         } else if (data.length === 16) {
             gl.uniformMatrix4fv(location, false, data);
         }
@@ -177,25 +173,83 @@ class VAO {
     }
     public static async loadVAOFromOBJFile(gl:WebGL2RenderingContext, program:Program, objName:string): Promise<number>{
         return new Promise<number>(async (resolve, reject) => {
-            var vertices:number[] = [];
+            class Vertex{
+                position:vec3;
+                normal:vec3;
+                textureCord:vec2;
+                constructor(position:vec3, normal:vec3, textureCord:vec2){
+                    this.position = position;
+                    this.normal = normal;
+                    this.textureCord = textureCord;
+                }
+            }
+            var vertices:vec3[] = [];
+            var normals:vec3[] = [];
+            var textureCords:vec2[] = [];
             var indices:number[] = [];
+            var assembledVertices:Vertex[] = [];
+            var vertexArray:Float32Array;
+            var normalArray:Float32Array;
+            var textureCordArray:Float32Array;
             var objFileContents:string = await loadFile(`res/assets/${objName}`);
+            function processVertex(vertex:string[]): void {
+                let currentVertexPointer:number = Number.parseInt(vertex[0])-1;
+                indices.push(currentVertexPointer);
+                let currentTexCord:vec2 = textureCords[Number.parseInt(vertex[1]) - 1];
+                textureCordArray[currentVertexPointer * 2] = currentTexCord[0];
+                textureCordArray[currentVertexPointer * 2 + 1] = 1 - currentTexCord[1];
+                let currentNormal:vec3 = normals[Number.parseInt(vertex[2]) - 1];
+                normalArray[currentVertexPointer * 3] = currentNormal[0];
+                normalArray[currentVertexPointer * 3 + 1] = currentNormal[1];
+                normalArray[currentVertexPointer * 3 + 2] = currentNormal[2];
+                assembledVertices.push(new Vertex(vertices[currentVertexPointer], normals[Number.parseInt(vertex[2]) - 1], textureCords[Number.parseInt(vertex[1]) - 1]));
+            }
             objFileContents.split(/\r\n|\r|\n/).forEach((currentLine:string) => {
                 if(currentLine.startsWith("v ")){
                     var lineSplit:string[] = currentLine.split(" ");
-                    vertices.push(Number.parseFloat(lineSplit[1]));
-                    vertices.push(Number.parseFloat(lineSplit[2]));
-                    vertices.push(Number.parseFloat(lineSplit[3]));
-                }else if(currentLine.startsWith("f")){
+                    //@ts-ignore
+                    vertices.push(vec3.fromValues(Number.parseFloat(lineSplit[1]), Number.parseFloat(lineSplit[2]), Number.parseFloat(lineSplit[3])));
+                }else if(currentLine.startsWith("vn ")){
+                    if(vertexArray == undefined){
+                        vertexArray = new Float32Array(vertices.length * 3);
+                        normalArray = new Float32Array(vertices.length * 3);
+                        textureCordArray = new Float32Array(vertices.length * 2);
+                    }
                     var lineSplit:string[] = currentLine.split(" ");
-                    console.log(lineSplit);
-                    indices.push(Number(lineSplit[1].split("/")[0])-1);
-                    indices.push(Number(lineSplit[2].split("/")[0])-1);
-                    indices.push(Number(lineSplit[3].split("/")[0])-1);
+                    //@ts-ignore
+                    normals.push(vec3.fromValues(Number.parseFloat(lineSplit[1]), Number.parseFloat(lineSplit[2]), Number.parseFloat(lineSplit[3])));
+                }else if(currentLine.startsWith("vt ")){
+                    var lineSplit:string[] = currentLine.split(" ");
+                    //@ts-ignore
+                    textureCords.push(vec2.fromValues(Number.parseFloat(lineSplit[1]), Number.parseFloat(lineSplit[2])));
+                }else if(currentLine.startsWith("f ")){
+                    var lineSplit:string[] = currentLine.split(" ");
+                    processVertex(lineSplit[1].split("/"));
+                    processVertex(lineSplit[2].split("/"));
+                    processVertex(lineSplit[3].split("/"));
+                }else{
+                    console.warn(`Unknown keyword ${currentLine}`);
                 }
             });
+            assembledVertices.forEach((x:Vertex) => {
+                var occurences:number = 0;
+                assembledVertices.forEach((y:Vertex) => {
+                    if(x.position == y.position && x.normal == y.normal && x.textureCord == y.textureCord){
+                        occurences++;
+                    }
+                });
+                if(occurences > 1){
+                    console.log(x);
+                }
+            });
+            vertices.forEach((currentVertex:vec3, i:number) => {
+                vertexArray[i * 3] = currentVertex[0];
+                vertexArray[i * 3 + 1] = currentVertex[1];
+                vertexArray[i * 3 + 2] = currentVertex[2];
+            });
             resolve(await VAO.loadVAOFromArray(gl, 
-                new VBOData(gl, new Float32Array(vertices), program, "in_pos", 3, WebGL2RenderingContext.FLOAT), 
+                new VBOData(gl, vertexArray, program, "in_pos", 3, WebGL2RenderingContext.FLOAT), 
+                new VBOData(gl, normalArray, program, "in_normal", 3, WebGL2RenderingContext.FLOAT),
                 new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
             ));
         });
@@ -287,6 +341,15 @@ class Entity{
         return transformationMatrix;
     }
 }
+class Light{
+    dir:vec3;
+    constructor(dir:vec3){
+        //@ts-ignore
+        this.dir = vec3.create();
+        //@ts-ignore
+        vec3.normalize(this.dir, dir);
+    }
+}
 class Camera {
     rot: vec3;
     pos:vec3;
@@ -327,8 +390,9 @@ class Renderer {
     projectionMatrix: mat4;
     projectionViewMatrixLocation:WebGLUniformLocation;
     transformationMatrixLocation:WebGLUniformLocation;
+    reverseLightDirectionLocation:WebGLUniformLocation;
     entityMap:Map<number, Entity[]>;
-    static FOV: number = 90;
+    static FOV: number = 60;
     static NEAR: number = 0.1;
     static FAR: number = 100;
     public static async init(gl: WebGL2RenderingContext, programName: string): Promise<Renderer> {
@@ -339,8 +403,9 @@ class Renderer {
             //@ts-ignore
             renderer.projectionMatrix = mat4.create();
             renderer.updateProjectionMatrix(gl);
-            renderer.projectionViewMatrixLocation = renderer.program.getUniformLocation(gl, "in_projectionViewMatrix");
-            renderer.transformationMatrixLocation = renderer.program.getUniformLocation(gl, "in_modelViewMatrix");
+            renderer.projectionViewMatrixLocation = renderer.program.getUniformLocation(gl, "u_projectionViewMatrix");
+            renderer.transformationMatrixLocation = renderer.program.getUniformLocation(gl, "u_transformationMatrix");
+            renderer.reverseLightDirectionLocation = renderer.program.getUniformLocation(gl, "u_reverseLightDirection");
             resolve(renderer);
         });
     }
@@ -367,7 +432,7 @@ class Renderer {
             this.entityMap.get(currentEntity.model.vaoID).push(currentEntity);
         });
     }
-    public render(gl: WebGL2RenderingContext, camera:Camera, entities: Entity[]): void {
+    public render(gl: WebGL2RenderingContext, camera:Camera, light:Light, entities: Entity[]): void {
         this.prepareEntities(entities);
         Renderer.prepareViewport(gl);
         Renderer.clear(gl);
@@ -383,6 +448,7 @@ class Renderer {
             currentEntities.forEach((currentEntity:Entity) => {
                 this.program.loadDataToUniform(gl, this.projectionViewMatrixLocation, projectionViewMatrix);
                 this.program.loadDataToUniform(gl, this.transformationMatrixLocation, currentEntity.createTransformationMatrix());
+                this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
                 if (VAO.vaos[currentVAOID].containsIndexBuffer) {
                     gl.drawElements(WebGL2RenderingContext.TRIANGLES, VAO.vaos[currentVAOID].length, gl.UNSIGNED_SHORT, 0);
                 } else {
@@ -447,18 +513,21 @@ async function init(): Promise<void> {
     var renderer: Renderer = await Renderer.init(gl, "shader");
     //@ts-ignore
     var camera:Camera = new Camera(vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, 0));
+    //@ts-ignore
+    var sun:Light = new Light(vec3.fromValues(5, 7, 0));
     var vao: number = await VAO.loadVAOFromArray(gl,
         new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), renderer.program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false),
         /*new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false),*/
         new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), renderer.program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
     );
-    var objVBO:number = await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj");
+    var objVBO:number = await VAO.loadVAOFromOBJFile(gl, renderer.program, "cube.obj");
+    console.log(VAO.getVAO(1));
     var entities:Entity[] = [];
-    entities.push(new Entity(new Model(vao), [0, 0, -6], [45, 45, 45]));
-    entities.push(new Entity(new Model(vao), [-2, 0, -6], [45, 45, 45]));
-    entities.push(new Entity(new Model(objVBO), [2, 0, -6], [0, 0, 180]));
-    entities.push(new Entity(new Model(vao), [4, 0, -6], [45, 45, 45]));
-    entities.push(new Entity(new Model(vao), [6, 0, -6], [45, 45, 45]));
+    //entities.push(new Entity(new Model(vao), [0, 0, -6], [45, 45, 45]));
+    //entities.push(new Entity(new Model(vao), [-2, 0, -6], [45, 45, 45]));
+    entities.push(new Entity(new Model(objVBO), [0,0,0], [0, 0, 180]));
+    //entities.push(new Entity(new Model(vao), [4, 0, -6], [45, 45, 45]));
+    //entities.push(new Entity(new Model(vao), [6, 0, -6], [45, 45, 45]));
     var then:number = millisToSeconds(Date.now());
     var delta:number = 1;
     document.body.onresize = () => {
@@ -481,7 +550,7 @@ async function init(): Promise<void> {
         then = millisToSeconds(Date.now());
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
-        renderer.render(gl, camera, entities);
+        renderer.render(gl, camera, sun, entities);
         window.requestAnimationFrame(mainLoop);
     }
 }

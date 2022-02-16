@@ -1,9 +1,14 @@
-precision mediump float;
+precision highp float;
 
-//in vec3 out_col;
+in vec3 out_normal;
 
-out vec4 out_Color;
+out vec4 out_color;
+
+uniform vec3 u_reverseLightDirection;
 
 void main(){
-    out_Color = vec4(1.0, 0.0, 0.0 , 1.0);
+    vec3 normalized = normalize(out_normal);
+    float light = dot(normalized, u_reverseLightDirection);
+    out_color = vec4(out_normal, 1.0);
+    //out_color.rgb *= light;
 }
