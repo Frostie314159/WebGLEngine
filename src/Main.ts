@@ -120,7 +120,7 @@ class VBO {
         gl.deleteBuffer(this.vbo);
     }
     public static async loadVBOFromArray(gl: WebGL2RenderingContext, vboData: VBOData): Promise<VBO> {
-        return new Promise<VBO>((resolve, reject) => {
+        return new Promise<VBO>((resolve) => {
             var vbo: VBO = new VBO();
             vbo.vbo = gl.createBuffer();
             vbo.vboData = vboData;
@@ -172,7 +172,7 @@ class VAO {
         return VAO.vaos[vaoID];
     }
     public static async loadVAOFromOBJFile(gl: WebGL2RenderingContext, program: Program, objName: string): Promise<number> {
-        return new Promise<number>(async (resolve, reject) => {
+        return new Promise<number>(async (resolve) => {
             class Vertex {
                 position: vec3;
                 normal: vec3;
@@ -239,12 +239,13 @@ class VAO {
             resolve(await VAO.loadVAOFromArray(gl,
                 new VBOData(gl, vertexArray, program, "in_pos", 3, WebGL2RenderingContext.FLOAT),
                 new VBOData(gl, normalArray, program, "in_normal", 3, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, textureCordArray, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT),
                 new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
             ));
         });
     }
     public static async loadVAOFromArray(gl: WebGL2RenderingContext, ...vboData: VBOData[]): Promise<number> {
-        return new Promise<number>(async (resolve, reject) => {
+        return new Promise<number>(async (resolve) => {
             var vao: VAO = new VAO();
             vao.vao = gl.createVertexArray();
             vao.containsIndexBuffer = false;
@@ -274,6 +275,7 @@ class VAO {
 class Texture {
     texture: WebGLTexture;
     static activeTextures: number = 0;
+    static textures:Texture[] = [];
     public activateTexture(gl: WebGL2RenderingContext): void {
         gl.activeTexture(WebGL2RenderingContext.TEXTURE0 + Texture.activeTextures);
         gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, this.texture);
@@ -289,8 +291,11 @@ class Texture {
     public unbindTexture(gl: WebGL2RenderingContext): void {
         gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, null);
     }
-    public static async loadTexture(gl: WebGL2RenderingContext, textureName: string): Promise<Texture> {
-        return new Promise<Texture>(async (resolve, reject) => {
+    public static getTexture(textureID:number): Texture{
+        return Texture.textures[textureID];
+    }
+    public static async loadTexture(gl: WebGL2RenderingContext, textureName: string): Promise<number> {
+        return new Promise<number>(async (resolve) => {
             var texture: Texture = new Texture();
             texture.texture = gl.createTexture();
             texture.bindTexture(gl);
@@ -298,13 +303,17 @@ class Texture {
             gl.texImage2D(WebGL2RenderingContext.TEXTURE_2D, 0, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.UNSIGNED_BYTE, image);
             gl.generateMipmap(WebGL2RenderingContext.TEXTURE_2D);
             texture.unbindTexture(gl);
+            Texture.textures.push(texture);
+            resolve(Texture.textures.length - 1);
         });
     }
 }
 class Model {
     vaoID: number;
-    constructor(vaoID: number) {
+    textureID:number;
+    constructor(vaoID: number, textureID:number) {
         this.vaoID = vaoID;
+        this.textureID = textureID;
     }
 }
 class Entity {
@@ -371,6 +380,7 @@ class Renderer {
     projectionViewMatrixLocation: WebGLUniformLocation;
     transformationMatrixLocation: WebGLUniformLocation;
     reverseLightDirectionLocation: WebGLUniformLocation;
+    textureLocation:WebGLUniformLocation;
     entityMap: Map<number, Entity[]>;
     static FOV: number = 60;
     static NEAR_PLANE: number = 0.1;
@@ -386,6 +396,7 @@ class Renderer {
             renderer.projectionViewMatrixLocation = renderer.program.getUniformLocation(gl, "u_projectionViewMatrix");
             renderer.transformationMatrixLocation = renderer.program.getUniformLocation(gl, "u_transformationMatrix");
             renderer.reverseLightDirectionLocation = renderer.program.getUniformLocation(gl, "u_reverseLightDirection");
+            renderer.textureLocation = renderer.program.getUniformLocation(gl, "u_texture");
             resolve(renderer);
         });
     }
@@ -436,6 +447,7 @@ class Renderer {
                 if(vec3.distance(camera.pos, currentEntity.pos) > Renderer.FAR_PLANE){
                     return;
                 }
+                Texture.getTexture(currentEntity.model.textureID).activateTexture(gl);
                 this.program.loadDataToUniform(gl, this.projectionViewMatrixLocation, projectionViewMatrix);
                 this.program.loadDataToUniform(gl, this.transformationMatrixLocation, currentEntity.createTransformationMatrix());
                 this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
@@ -444,6 +456,7 @@ class Renderer {
                 } else {
                     gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, VAO.vaos[currentVAOID].length);
                 }
+                Texture.getTexture(currentEntity.model.textureID).disableTexture(gl);
             });
             VAO.vaos[currentVAOID].disableVAO(gl);
         });
@@ -453,7 +466,7 @@ class Renderer {
 async function loadImage(imageName: string): Promise<HTMLImageElement> {
     return new Promise<HTMLImageElement>((resolve) => {
         var image: HTMLImageElement = new Image();
-        image.src = `res/shaders/${imageName}.png`;
+        image.src = `res/assets/${imageName}`;
         image.onload = () => {
             resolve(image);
         };
@@ -510,11 +523,12 @@ async function init(): Promise<void> {
     //@ts-ignore
     var sun: Light = new Light(vec3.fromValues(5, 7, 10));
 
-    var objVBO: number = await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj");
-
+    var objVAO: number = await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj");
+    var objTex: number = await Texture.loadTexture(gl, "Suzanne.png");
+    console.log(objTex);
     var entities: Entity[] = [];
     for (let i: number = 0; i < 200; i++) {
-        entities.push(new Entity(new Model(objVBO), [4 * i, 10, 6], [0, 0, 0]));
+        entities.push(new Entity(new Model(objVAO, objTex), [4 * i, 10, 6], [0, 0, 0]));
     }
 
     var then: number = millisToSeconds(Date.now());
@@ -572,6 +586,7 @@ async function init(): Promise<void> {
         then = millisToSeconds(Date.now());
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
+        console.log(1 / delta);
         entities.forEach((currentEntity:Entity) => {
             currentEntity.update(delta);
         });

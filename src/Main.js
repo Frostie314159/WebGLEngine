@@ -131,7 +131,7 @@ class VBO {
         gl.deleteBuffer(this.vbo);
     }
     static async loadVBOFromArray(gl, vboData) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             var vbo = new VBO();
             vbo.vbo = gl.createBuffer();
             vbo.vboData = vboData;
@@ -182,7 +182,7 @@ class VAO {
         return VAO.vaos[vaoID];
     }
     static async loadVAOFromOBJFile(gl, program, objName) {
-        return new Promise(async (resolve, reject) => {
+        return new Promise(async (resolve) => {
             class Vertex {
                 position;
                 normal;
@@ -250,11 +250,11 @@ class VAO {
                 vertexArray[i * 3 + 1] = currentVertex[1];
                 vertexArray[i * 3 + 2] = currentVertex[2];
             });
-            resolve(await VAO.loadVAOFromArray(gl, new VBOData(gl, vertexArray, program, "in_pos", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, normalArray, program, "in_normal", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)));
+            resolve(await VAO.loadVAOFromArray(gl, new VBOData(gl, vertexArray, program, "in_pos", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, normalArray, program, "in_normal", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, textureCordArray, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT), new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)));
         });
     }
     static async loadVAOFromArray(gl, ...vboData) {
-        return new Promise(async (resolve, reject) => {
+        return new Promise(async (resolve) => {
             var vao = new VAO();
             vao.vao = gl.createVertexArray();
             vao.containsIndexBuffer = false;
@@ -284,6 +284,7 @@ class VAO {
 class Texture {
     texture;
     static activeTextures = 0;
+    static textures = [];
     activateTexture(gl) {
         gl.activeTexture(WebGL2RenderingContext.TEXTURE0 + Texture.activeTextures);
         gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, this.texture);
@@ -299,8 +300,11 @@ class Texture {
     unbindTexture(gl) {
         gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, null);
     }
+    static getTexture(textureID) {
+        return Texture.textures[textureID];
+    }
     static async loadTexture(gl, textureName) {
-        return new Promise(async (resolve, reject) => {
+        return new Promise(async (resolve) => {
             var texture = new Texture();
             texture.texture = gl.createTexture();
             texture.bindTexture(gl);
@@ -308,13 +312,17 @@ class Texture {
             gl.texImage2D(WebGL2RenderingContext.TEXTURE_2D, 0, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.UNSIGNED_BYTE, image);
             gl.generateMipmap(WebGL2RenderingContext.TEXTURE_2D);
             texture.unbindTexture(gl);
+            Texture.textures.push(texture);
+            resolve(Texture.textures.length - 1);
         });
     }
 }
 class Model {
     vaoID;
-    constructor(vaoID) {
+    textureID;
+    constructor(vaoID, textureID) {
         this.vaoID = vaoID;
+        this.textureID = textureID;
     }
 }
 class Entity {
@@ -379,6 +387,7 @@ class Renderer {
     projectionViewMatrixLocation;
     transformationMatrixLocation;
     reverseLightDirectionLocation;
+    textureLocation;
     entityMap;
     static FOV = 60;
     static NEAR_PLANE = 0.1;
@@ -394,6 +403,7 @@ class Renderer {
             renderer.projectionViewMatrixLocation = renderer.program.getUniformLocation(gl, "u_projectionViewMatrix");
             renderer.transformationMatrixLocation = renderer.program.getUniformLocation(gl, "u_transformationMatrix");
             renderer.reverseLightDirectionLocation = renderer.program.getUniformLocation(gl, "u_reverseLightDirection");
+            renderer.textureLocation = renderer.program.getUniformLocation(gl, "u_texture");
             resolve(renderer);
         });
     }
@@ -444,6 +454,7 @@ class Renderer {
                 if (vec3.distance(camera.pos, currentEntity.pos) > Renderer.FAR_PLANE) {
                     return;
                 }
+                Texture.getTexture(currentEntity.model.textureID).activateTexture(gl);
                 this.program.loadDataToUniform(gl, this.projectionViewMatrixLocation, projectionViewMatrix);
                 this.program.loadDataToUniform(gl, this.transformationMatrixLocation, currentEntity.createTransformationMatrix());
                 this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
@@ -453,6 +464,7 @@ class Renderer {
                 else {
                     gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, VAO.vaos[currentVAOID].length);
                 }
+                Texture.getTexture(currentEntity.model.textureID).disableTexture(gl);
             });
             VAO.vaos[currentVAOID].disableVAO(gl);
         });
@@ -462,7 +474,7 @@ class Renderer {
 async function loadImage(imageName) {
     return new Promise((resolve) => {
         var image = new Image();
-        image.src = `res/shaders/${imageName}.png`;
+        image.src = `res/assets/${imageName}`;
         image.onload = () => {
             resolve(image);
         };
@@ -517,10 +529,12 @@ async function init() {
     var camera = new Camera(vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, 0));
     //@ts-ignore
     var sun = new Light(vec3.fromValues(5, 7, 10));
-    var objVBO = await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj");
+    var objVAO = await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj");
+    var objTex = await Texture.loadTexture(gl, "Suzanne.png");
+    console.log(objTex);
     var entities = [];
     for (let i = 0; i < 200; i++) {
-        entities.push(new Entity(new Model(objVBO), [4 * i, 10, 6], [0, 0, 0]));
+        entities.push(new Entity(new Model(objVAO, objTex), [4 * i, 10, 6], [0, 0, 0]));
     }
     var then = millisToSeconds(Date.now());
     var delta = 1;
@@ -579,6 +593,7 @@ async function init() {
         then = millisToSeconds(Date.now());
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
+        console.log(1 / delta);
         entities.forEach((currentEntity) => {
             currentEntity.update(delta);
         });
