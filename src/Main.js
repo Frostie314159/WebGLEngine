@@ -245,17 +245,6 @@ class VAO {
                     console.warn(`Unknown keyword ${currentLine}`);
                 }
             });
-            assembledVertices.forEach((x) => {
-                var occurences = 0;
-                assembledVertices.forEach((y) => {
-                    if (x.position == y.position && x.normal == y.normal && x.textureCord == y.textureCord) {
-                        occurences++;
-                    }
-                });
-                if (occurences > 1) {
-                    console.log(x);
-                }
-            });
             vertices.forEach((currentVertex, i) => {
                 vertexArray[i * 3] = currentVertex[0];
                 vertexArray[i * 3 + 1] = currentVertex[1];
@@ -294,7 +283,6 @@ class VAO {
 }
 class Texture {
     texture;
-    isActive;
     static activeTextures = 0;
     activateTexture(gl) {
         gl.activeTexture(WebGL2RenderingContext.TEXTURE0 + Texture.activeTextures);
@@ -333,20 +321,25 @@ class Entity {
     model;
     pos;
     rot;
+    disableCulling;
     static G = 9.81;
-    constructor(model, pos, rot) {
+    constructor(model, pos, rot, disableCulling = false) {
         this.model = model;
         this.pos = pos;
         this.rot = rot;
+        //TODO: This is terrible
+        this.disableCulling = disableCulling;
     }
     update(deltaTime) {
-        this.pos[1] -= Entity.G * deltaTime;
+        if (this.pos[1] >= 0) {
+            this.pos[1] -= Entity.G * deltaTime;
+        }
     }
     createTransformationMatrix() {
         //@ts-ignore
         var transformationMatrix = mat4.create();
         //@ts-ignore
-        mat4.translate(transformationMatrix, transformationMatrix, this.pos);
+        mat4.translate(transformationMatrix, transformationMatrix, vec3.negate(vec3.create(), this.pos));
         rotateXYZ(transformationMatrix, this.rot);
         return transformationMatrix;
     }
@@ -363,35 +356,20 @@ class Light {
 class Camera {
     rot;
     pos;
+    viewMatrix;
     static SPEED = 5;
     constructor(pos, rot) {
         this.rot = rot;
         this.pos = pos;
     }
-    keyCallback(code, delta) {
-        switch (code) {
-            case "KeyA":
-                this.pos[0] -= Camera.SPEED * delta;
-            case "KeyD":
-                this.pos[0] += Camera.SPEED * delta;
-            case "Space":
-                this.pos[1] -= Camera.SPEED * delta;
-            case "SiftLeft":
-                this.pos[1] += Camera.SPEED * delta;
-            case "KeyW":
-                this.pos[2] -= Camera.SPEED * delta;
-            case "KeyS":
-                this.pos[2] += Camera.SPEED * delta;
-        }
-    }
-    getViewMatrix() {
+    updateViewMatrix() {
         //@ts-ignore
-        var viewMatrix = mat4.create();
+        this.viewMatrix = mat4.identity(mat4.create());
         //@ts-ignore
-        mat4.translate(viewMatrix, viewMatrix, this.pos);
-        rotateXYZ(viewMatrix, this.rot);
+        mat4.translate(this.viewMatrix, this.viewMatrix, vec3.negate(vec3.create(), this.pos));
+        rotateXYZ(this.viewMatrix, this.rot);
         //@ts-ignore
-        return mat4.invert(viewMatrix, viewMatrix);
+        this.viewMatrix = mat4.invert(this.viewMatrix, this.viewMatrix);
     }
 }
 class Renderer {
@@ -403,8 +381,8 @@ class Renderer {
     reverseLightDirectionLocation;
     entityMap;
     static FOV = 60;
-    static NEAR = 0.1;
-    static FAR = 100;
+    static NEAR_PLANE = 0.1;
+    static FAR_PLANE = 100;
     static async init(gl, programName) {
         return new Promise(async (resolve, reject) => {
             var renderer = new Renderer();
@@ -431,7 +409,7 @@ class Renderer {
     }
     updateProjectionMatrix(gl) {
         //@ts-ignore
-        mat4.perspective(this.projectionMatrix, toRadians(Renderer.FOV), gl.canvas.width / gl.canvas.height, Renderer.NEAR, Renderer.FAR);
+        mat4.perspective(this.projectionMatrix, toRadians(Renderer.FOV), gl.canvas.width / gl.canvas.height, Renderer.NEAR_PLANE, Renderer.FAR_PLANE);
     }
     prepareEntities(entities) {
         this.entityMap = new Map();
@@ -448,14 +426,24 @@ class Renderer {
         Renderer.clear(gl);
         gl.enable(WebGL2RenderingContext.DEPTH_TEST);
         gl.depthFunc(WebGL2RenderingContext.LEQUAL);
+        gl.enable(WebGL2RenderingContext.CULL_FACE);
+        gl.cullFace(WebGL2RenderingContext.BACK);
         this.program.start(gl);
         //@ts-ignore
         var projectionViewMatrix = mat4.create();
+        camera.updateViewMatrix();
+        if (camera.viewMatrix === null) {
+            console.log(camera.viewMatrix);
+        }
         //@ts-ignore
-        mat4.mul(projectionViewMatrix, this.projectionMatrix, camera.getViewMatrix());
+        mat4.mul(projectionViewMatrix, this.projectionMatrix, camera.viewMatrix);
         this.entityMap.forEach((currentEntities, currentVAOID) => {
             VAO.vaos[currentVAOID].enableVAO(gl);
             currentEntities.forEach((currentEntity) => {
+                //@ts-ignore
+                if (vec3.distance(camera.pos, currentEntity.pos) > Renderer.FAR_PLANE) {
+                    return;
+                }
                 this.program.loadDataToUniform(gl, this.projectionViewMatrixLocation, projectionViewMatrix);
                 this.program.loadDataToUniform(gl, this.transformationMatrixLocation, currentEntity.createTransformationMatrix());
                 this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
@@ -472,7 +460,7 @@ class Renderer {
     }
 }
 async function loadImage(imageName) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         var image = new Image();
         image.src = `res/shaders/${imageName}.png`;
         image.onload = () => {
@@ -507,10 +495,11 @@ async function loadFile(url) {
     });
 }
 async function createContext() {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         var canvas = document.createElement("canvas");
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+        canvas.id = "webgl_canvas";
         document.body.appendChild(canvas);
         let gl = canvas.getContext("webgl2");
         if (gl) {
@@ -527,35 +516,61 @@ async function init() {
     //@ts-ignore
     var camera = new Camera(vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, 0));
     //@ts-ignore
-    var sun = new Light(vec3.fromValues(5, 7, 0));
-    var vao = await VAO.loadVAOFromArray(gl, new VBOData(gl, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), renderer.program, "in_pos", 2, WebGL2RenderingContext.FLOAT, false), 
-    /*new VBOData(gl, new Float32Array([1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0]), renderer.program, "in_col", 3, WebGL2RenderingContext.FLOAT, false),*/
-    new VBOData(gl, new Uint16Array([0, 1, 2, 2, 3, 0]), renderer.program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true));
-    var objVBO = await VAO.loadVAOFromOBJFile(gl, renderer.program, "cube.obj");
-    console.log(VAO.getVAO(1));
+    var sun = new Light(vec3.fromValues(5, 7, 10));
+    var objVBO = await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj");
     var entities = [];
-    //entities.push(new Entity(new Model(vao), [0, 0, -6], [45, 45, 45]));
-    //entities.push(new Entity(new Model(vao), [-2, 0, -6], [45, 45, 45]));
-    entities.push(new Entity(new Model(objVBO), [0, 0, 0], [0, 0, 180]));
-    //entities.push(new Entity(new Model(vao), [4, 0, -6], [45, 45, 45]));
-    //entities.push(new Entity(new Model(vao), [6, 0, -6], [45, 45, 45]));
+    for (let i = 0; i < 200; i++) {
+        entities.push(new Entity(new Model(objVBO), [4 * i, 10, 6], [0, 0, 0]));
+    }
     var then = millisToSeconds(Date.now());
     var delta = 1;
-    document.body.onresize = () => {
+    var isPointerLocked = false;
+    document.getElementById("webgl_canvas").onresize = () => {
         renderer.updateProjectionMatrix(gl);
     };
-    window.onkeydown = (ev) => {
-        if (ev.code === "KeyA") {
-            camera.pos[0] -= Camera.SPEED * delta;
+    window.onkeydown = async (ev) => {
+        if (ev.code === "KeyC") {
+            camera.pos[1] += Camera.SPEED * delta;
         }
-        else if (ev.code === "KeyD") {
-            camera.pos[0] += Camera.SPEED * delta;
+        else if (ev.code === "Space") {
+            camera.pos[1] -= Camera.SPEED * delta;
         }
-        else if (ev.code === "KeyW") {
-            camera.pos[2] -= Camera.SPEED * delta;
+        if (ev.code === "KeyW") {
+            let distance = Camera.SPEED * delta;
+            camera.pos[0] += distance * Math.sin(toRadians(camera.rot[1]));
+            camera.pos[2] += distance * Math.cos(toRadians(camera.rot[1]));
         }
         else if (ev.code === "KeyS") {
-            camera.pos[2] += Camera.SPEED * delta;
+            let distance = Camera.SPEED * delta;
+            camera.pos[0] -= distance * Math.sin(toRadians(camera.rot[1]));
+            camera.pos[2] -= distance * Math.cos(toRadians(camera.rot[1]));
+        }
+        if (ev.code === "KeyA") {
+            let distance = Camera.SPEED * delta;
+            camera.pos[0] += distance * Math.sin(toRadians(camera.rot[1] + 90));
+            camera.pos[2] += distance * Math.cos(toRadians(camera.rot[1] + 90));
+        }
+        else if (ev.code === "KeyD") {
+            let distance = Camera.SPEED * delta;
+            camera.pos[0] -= distance * Math.sin(toRadians(camera.rot[1] + 90));
+            camera.pos[2] -= distance * Math.cos(toRadians(camera.rot[1] + 90));
+        }
+        if (ev.code === "KeyP") {
+            renderer.updateProjectionMatrix(gl);
+        }
+        if (ev.code === "ShiftRight") {
+            await document.getElementById("webgl_canvas").requestFullscreen();
+            document.getElementById("webgl_canvas").requestPointerLock();
+            renderer.updateProjectionMatrix(gl);
+        }
+    };
+    document.onpointerlockchange = () => {
+        isPointerLocked = !isPointerLocked;
+    };
+    window.onmousemove = (ev) => {
+        if (isPointerLocked) {
+            //camera.rot[0] += ev.movementY / gl.canvas.height * 180;
+            camera.rot[1] -= ev.movementX / gl.canvas.width * 180;
         }
     };
     window.requestAnimationFrame(mainLoop);
@@ -564,6 +579,9 @@ async function init() {
         then = millisToSeconds(Date.now());
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
+        entities.forEach((currentEntity) => {
+            currentEntity.update(delta);
+        });
         renderer.render(gl, camera, sun, entities);
         window.requestAnimationFrame(mainLoop);
     }
