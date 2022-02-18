@@ -48,7 +48,7 @@ class Program {
         gl.deleteProgram(this.program);
     }
     static detectShaderType(name) {
-        return name.includes(".vert") ? WebGL2RenderingContext.VERTEX_SHADER : WebGL2RenderingContext.FRAGMENT_SHADER;
+        return name.endsWith(".vert") ? WebGL2RenderingContext.VERTEX_SHADER : WebGL2RenderingContext.FRAGMENT_SHADER;
     }
     static async loadShader(gl, name) {
         return new Promise(async (resolve, reject) => {
@@ -178,6 +178,11 @@ class VAO {
         });
         gl.deleteVertexArray(this.vao);
     }
+    static deleteALL(gl) {
+        VAO.vaos.reverse().forEach((currentVAO) => {
+            currentVAO.delete(gl);
+        });
+    }
     static getVAO(vaoID) {
         return VAO.vaos[vaoID];
     }
@@ -201,7 +206,7 @@ class VAO {
             var vertexArray;
             var normalArray;
             var textureCordArray;
-            var objFileContents = await loadFile(`res/assets/${objName}`);
+            var objFileContents = await loadFile(`res/assets/${objName}.obj`);
             function processVertex(vertex) {
                 let currentVertexPointer = Number.parseInt(vertex[0]) - 1;
                 indices.push(currentVertexPointer);
@@ -300,6 +305,14 @@ class Texture {
     unbindTexture(gl) {
         gl.bindTexture(WebGL2RenderingContext.TEXTURE_2D, null);
     }
+    delete(gl) {
+        gl.deleteTexture(this.texture);
+    }
+    static deleteALL(gl) {
+        Texture.textures.reverse().forEach((currentTexture) => {
+            currentTexture.delete(gl);
+        });
+    }
     static getTexture(textureID) {
         return Texture.textures[textureID];
     }
@@ -308,7 +321,7 @@ class Texture {
             var texture = new Texture();
             texture.texture = gl.createTexture();
             texture.bindTexture(gl);
-            var image = await loadImage(textureName);
+            var image = await loadImage(`res/assets/${textureName}.png`);
             gl.texImage2D(WebGL2RenderingContext.TEXTURE_2D, 0, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.UNSIGNED_BYTE, image);
             gl.generateMipmap(WebGL2RenderingContext.TEXTURE_2D);
             texture.unbindTexture(gl);
@@ -320,28 +333,40 @@ class Texture {
 class Model {
     vaoID;
     textureID;
-    constructor(vaoID, textureID) {
-        this.vaoID = vaoID;
-        this.textureID = textureID;
+    static models = [];
+    static getModel(modelID) {
+        return Model.models[modelID];
+    }
+    static async loadModel(gl, program, name) {
+        return new Promise(async (resolve) => {
+            var model = new Model();
+            model.vaoID = await VAO.loadVAOFromOBJFile(gl, program, name);
+            model.textureID = await Texture.loadTexture(gl, name);
+            Model.models.push(model);
+            resolve(Model.models.length - 1);
+        });
     }
 }
 class Entity {
-    model;
+    modelID;
     pos;
     rot;
-    disableCulling;
+    disableFarPlaneCulling;
+    disableBackFaceCulling;
     static G = 9.81;
-    constructor(model, pos, rot, disableCulling = false) {
-        this.model = model;
+    constructor(modelID, pos, rot, disableBackFaceCulling = false, disableFarPlaneCulling = false) {
+        this.modelID = modelID;
         this.pos = pos;
         this.rot = rot;
         //TODO: This is terrible
-        this.disableCulling = disableCulling;
+        this.disableFarPlaneCulling = disableFarPlaneCulling;
+        this.disableBackFaceCulling = disableBackFaceCulling;
     }
     update(deltaTime) {
-        if (this.pos[1] >= 0) {
-            this.pos[1] -= Entity.G * deltaTime;
+        if (this.pos[1] <= 0) {
+            this.pos[1] += Entity.G * deltaTime;
         }
+        this.rot[1] += 20 * deltaTime;
     }
     createTransformationMatrix() {
         //@ts-ignore
@@ -385,7 +410,7 @@ class Renderer {
     drawMode;
     projectionMatrix;
     projectionViewMatrixLocation;
-    transformationMatrixLocation;
+    transformationInverseTransposeMatrixLocation;
     reverseLightDirectionLocation;
     textureLocation;
     entityMap;
@@ -393,15 +418,15 @@ class Renderer {
     static NEAR_PLANE = 0.1;
     static FAR_PLANE = 100;
     static async init(gl, programName) {
-        return new Promise(async (resolve, reject) => {
+        return new Promise(async (resolve) => {
             var renderer = new Renderer();
             renderer.program = await Program.loadProgram(gl, programName);
-            renderer.drawMode = WebGL2RenderingContext.LINES;
+            renderer.drawMode = WebGL2RenderingContext.TRIANGLES;
             //@ts-ignore
             renderer.projectionMatrix = mat4.create();
             renderer.updateProjectionMatrix(gl);
-            renderer.projectionViewMatrixLocation = renderer.program.getUniformLocation(gl, "u_projectionViewMatrix");
-            renderer.transformationMatrixLocation = renderer.program.getUniformLocation(gl, "u_transformationMatrix");
+            renderer.projectionViewMatrixLocation = renderer.program.getUniformLocation(gl, "u_projectionViewTransformationMatrix");
+            renderer.transformationInverseTransposeMatrixLocation = renderer.program.getUniformLocation(gl, "u_transformInverseTransposeMatrix");
             renderer.reverseLightDirectionLocation = renderer.program.getUniformLocation(gl, "u_reverseLightDirection");
             renderer.textureLocation = renderer.program.getUniformLocation(gl, "u_texture");
             resolve(renderer);
@@ -424,10 +449,10 @@ class Renderer {
     prepareEntities(entities) {
         this.entityMap = new Map();
         entities.forEach((currentEntity) => {
-            if (!this.entityMap.has(currentEntity.model.vaoID)) {
-                this.entityMap.set(currentEntity.model.vaoID, []);
+            if (!this.entityMap.has(currentEntity.modelID)) {
+                this.entityMap.set(currentEntity.modelID, []);
             }
-            this.entityMap.get(currentEntity.model.vaoID).push(currentEntity);
+            this.entityMap.get(currentEntity.modelID).push(currentEntity);
         });
     }
     render(gl, camera, light, entities) {
@@ -447,26 +472,40 @@ class Renderer {
         }
         //@ts-ignore
         mat4.mul(projectionViewMatrix, this.projectionMatrix, camera.viewMatrix);
-        this.entityMap.forEach((currentEntities, currentVAOID) => {
-            VAO.vaos[currentVAOID].enableVAO(gl);
+        this.entityMap.forEach((currentEntities, currentModelID) => {
+            VAO.getVAO(Model.getModel(currentModelID).vaoID).enableVAO(gl);
+            Texture.getTexture(Model.getModel(currentModelID).textureID).activateTexture(gl);
             currentEntities.forEach((currentEntity) => {
+                if (currentEntity.disableBackFaceCulling) {
+                    gl.disable(WebGL2RenderingContext.CULL_FACE);
+                }
                 //@ts-ignore
-                if (vec3.distance(camera.pos, currentEntity.pos) > Renderer.FAR_PLANE) {
+                if (currentEntity.disableFarPlaneCulling || vec3.distance(camera.pos, currentEntity.pos) > Renderer.FAR_PLANE) {
                     return;
                 }
-                Texture.getTexture(currentEntity.model.textureID).activateTexture(gl);
-                this.program.loadDataToUniform(gl, this.projectionViewMatrixLocation, projectionViewMatrix);
-                this.program.loadDataToUniform(gl, this.transformationMatrixLocation, currentEntity.createTransformationMatrix());
+                //@ts-ignore
+                var currentTransformationMatrix = currentEntity.createTransformationMatrix();
+                //@ts-ignore
+                this.program.loadDataToUniform(gl, this.projectionViewMatrixLocation, mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix));
+                //@ts-ignore
+                mat4.invert(currentTransformationMatrix, currentTransformationMatrix);
+                //@ts-ignore
+                mat4.transpose(currentTransformationMatrix, currentTransformationMatrix);
+                this.program.loadDataToUniform(gl, this.transformationInverseTransposeMatrixLocation, currentTransformationMatrix);
                 this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
-                if (VAO.vaos[currentVAOID].containsIndexBuffer) {
-                    gl.drawElements(WebGL2RenderingContext.TRIANGLES, VAO.vaos[currentVAOID].length, gl.UNSIGNED_SHORT, 0);
+                if (VAO.vaos[Model.getModel(currentModelID).vaoID].containsIndexBuffer) {
+                    gl.drawElements(this.drawMode, VAO.vaos[Model.getModel(currentModelID).vaoID].length, gl.UNSIGNED_SHORT, 0);
                 }
                 else {
-                    gl.drawArrays(WebGL2RenderingContext.TRIANGLES, 0, VAO.vaos[currentVAOID].length);
+                    gl.drawArrays(this.drawMode, 0, VAO.vaos[Model.getModel(currentModelID).vaoID].length);
                 }
-                Texture.getTexture(currentEntity.model.textureID).disableTexture(gl);
+                if (currentEntity.disableBackFaceCulling) {
+                    gl.enable(WebGL2RenderingContext.CULL_FACE);
+                    gl.cullFace(WebGL2RenderingContext.BACK);
+                }
             });
-            VAO.vaos[currentVAOID].disableVAO(gl);
+            Texture.getTexture(Model.getModel(currentModelID).textureID).disableTexture(gl);
+            VAO.vaos[Model.getModel(currentModelID).vaoID].disableVAO(gl);
         });
         this.program.stop(gl);
     }
@@ -474,7 +513,7 @@ class Renderer {
 async function loadImage(imageName) {
     return new Promise((resolve) => {
         var image = new Image();
-        image.src = `res/assets/${imageName}`;
+        image.src = imageName;
         image.onload = () => {
             resolve(image);
         };
@@ -522,6 +561,11 @@ async function createContext() {
         }
     });
 }
+async function updateEntities(entities, deltaTime) {
+    entities.forEach((currentEntity) => {
+        currentEntity.update(deltaTime);
+    });
+}
 async function init() {
     var gl = await createContext();
     var renderer = await Renderer.init(gl, "shader");
@@ -529,43 +573,41 @@ async function init() {
     var camera = new Camera(vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, 0));
     //@ts-ignore
     var sun = new Light(vec3.fromValues(5, 7, 10));
-    var objVAO = await VAO.loadVAOFromOBJFile(gl, renderer.program, "test.obj");
-    var objTex = await Texture.loadTexture(gl, "Suzanne.png");
-    console.log(objTex);
+    var suzanne = await Model.loadModel(gl, renderer.program, "teapot");
     var entities = [];
-    for (let i = 0; i < 200; i++) {
-        entities.push(new Entity(new Model(objVAO, objTex), [4 * i, 10, 6], [0, 0, 0]));
+    for (let i = 0; i < 1; i++) {
+        entities.push(new Entity(suzanne, [6 * i, 0, 6], [0, 0, 0], true));
     }
     var then = millisToSeconds(Date.now());
-    var delta = 1;
+    var deltaTime;
     var isPointerLocked = false;
     document.getElementById("webgl_canvas").onresize = () => {
         renderer.updateProjectionMatrix(gl);
     };
     window.onkeydown = async (ev) => {
         if (ev.code === "KeyC") {
-            camera.pos[1] += Camera.SPEED * delta;
+            camera.pos[1] += Camera.SPEED * deltaTime;
         }
         else if (ev.code === "Space") {
-            camera.pos[1] -= Camera.SPEED * delta;
+            camera.pos[1] -= Camera.SPEED * deltaTime;
         }
         if (ev.code === "KeyW") {
-            let distance = Camera.SPEED * delta;
+            let distance = Camera.SPEED * deltaTime;
             camera.pos[0] += distance * Math.sin(toRadians(camera.rot[1]));
             camera.pos[2] += distance * Math.cos(toRadians(camera.rot[1]));
         }
         else if (ev.code === "KeyS") {
-            let distance = Camera.SPEED * delta;
+            let distance = Camera.SPEED * deltaTime;
             camera.pos[0] -= distance * Math.sin(toRadians(camera.rot[1]));
             camera.pos[2] -= distance * Math.cos(toRadians(camera.rot[1]));
         }
         if (ev.code === "KeyA") {
-            let distance = Camera.SPEED * delta;
+            let distance = Camera.SPEED * deltaTime;
             camera.pos[0] += distance * Math.sin(toRadians(camera.rot[1] + 90));
             camera.pos[2] += distance * Math.cos(toRadians(camera.rot[1] + 90));
         }
         else if (ev.code === "KeyD") {
-            let distance = Camera.SPEED * delta;
+            let distance = Camera.SPEED * deltaTime;
             camera.pos[0] -= distance * Math.sin(toRadians(camera.rot[1] + 90));
             camera.pos[2] -= distance * Math.cos(toRadians(camera.rot[1] + 90));
         }
@@ -577,26 +619,25 @@ async function init() {
             document.getElementById("webgl_canvas").requestPointerLock();
             renderer.updateProjectionMatrix(gl);
         }
+        if (ev.code === "KeyM") {
+            renderer.drawMode = (renderer.drawMode === WebGL2RenderingContext.TRIANGLES) ? WebGL2RenderingContext.LINES : WebGL2RenderingContext.TRIANGLES;
+        }
     };
     document.onpointerlockchange = () => {
         isPointerLocked = !isPointerLocked;
     };
     window.onmousemove = (ev) => {
         if (isPointerLocked) {
-            //camera.rot[0] += ev.movementY / gl.canvas.height * 180;
             camera.rot[1] -= ev.movementX / gl.canvas.width * 180;
         }
     };
     window.requestAnimationFrame(mainLoop);
     function mainLoop() {
-        delta = millisToSeconds(Date.now()) - then;
+        deltaTime = millisToSeconds(Date.now()) - then;
         then = millisToSeconds(Date.now());
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
-        console.log(1 / delta);
-        entities.forEach((currentEntity) => {
-            currentEntity.update(delta);
-        });
+        updateEntities(entities, deltaTime);
         renderer.render(gl, camera, sun, entities);
         window.requestAnimationFrame(mainLoop);
     }

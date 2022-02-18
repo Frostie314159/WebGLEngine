@@ -1,4 +1,4 @@
-precision highp float;
+precision mediump float;
 
 in vec3 out_normal;
 in vec2 out_texCord;
