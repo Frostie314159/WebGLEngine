@@ -3,6 +3,8 @@ import { createContext, millisToSeconds, toRadians } from "./Util.js";
 import { Renderer } from "./Renderer.js";
 import { Model } from "./Model.js";
 import { Camera } from "./Camera.js";
+import { Light } from "./Light.js";
+const { vec3 } = await import("./node_modules/gl-matrix/esm/index.js");
 async function updateEntities(entities, deltaTime) {
     entities.forEach((currentEntity) => {
         currentEntity.update(deltaTime);
@@ -23,8 +25,10 @@ export async function init() {
     var then = millisToSeconds(Date.now());
     var deltaTime;
     var isPointerLocked = false;
-    document.getElementById("webgl_canvas").onresize = () => {
-        renderer.updateProjectionMatrix(gl);
+    window.onmousemove = (ev) => {
+        if (isPointerLocked) {
+            camera.rot[1] -= ev.movementX / gl.canvas.width * 180 * deltaTime;
+        }
     };
     window.onkeydown = async (ev) => {
         if (ev.code === "KeyC") {
@@ -68,10 +72,8 @@ export async function init() {
     document.onpointerlockchange = () => {
         isPointerLocked = !isPointerLocked;
     };
-    window.onmousemove = (ev) => {
-        if (isPointerLocked) {
-            camera.rot[1] -= ev.movementX / gl.canvas.width * 180;
-        }
+    document.getElementById("webgl_canvas").onresize = () => {
+        renderer.updateProjectionMatrix(gl);
     };
     window.requestAnimationFrame(mainLoop);
     function mainLoop() {
