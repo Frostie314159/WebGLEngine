@@ -1,7 +1,7 @@
 {
     "compilerOptions": {
         "target": "ESNext",
-        "module": "CommonJS",
+        "module": "ESNext",
         "moduleResolution": "node",
         "lib": [
             "DOM",
@@ -10,6 +10,17 @@
         ]
     },
     "files": [
-        "Main.ts"
+        "Main.ts",
+        "Util.ts",
+        "Camera.ts",
+        "Entity.ts",
+        "Light.ts",
+        "Model.ts",
+        "Program.ts",
+        "Renderer.ts",
+        "Texture.ts",
+        "VAO.ts",
+        "VBO.ts",
+        "VBOData.ts"
     ]
 }
