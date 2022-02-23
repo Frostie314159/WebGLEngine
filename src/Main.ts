@@ -375,28 +375,55 @@ class TerrainTile {
     vaoID: number;
     pos: vec3;
     static TILE_SIZE = 100;
-    public static async generateTerrainTile(gl: WebGL2RenderingContext, resolution: number): Promise<TerrainTile> {
-        return new Promise<TerrainTile>((resolve) => {
+    public static async generateTerrainTile(gl: WebGL2RenderingContext, program:Program, resolution: number): Promise<TerrainTile> {
+        return new Promise<TerrainTile>(async (resolve) => {
             var terrainTile: TerrainTile = new TerrainTile();
 
-            var vertices: vec3[] = [];
-            var normals: vec3[] = [];
-            var textureCords: vec2[] = [];
-            var indices: number[] = [];
+            let VERTICES_PER_ROW: number = resolution + 1;
+            let VERTEX_COUNT: number = Math.pow(VERTICES_PER_ROW, 2);
+            let QUADS_PER_ROW: number = resolution * 2;
 
-            let STEP_SIZE: number = 1 / resolution;
-            for (let X = 0; X < resolution; X++) {
-                for (let Y = 0; Y < resolution; Y++) {
-                    vertices.push([X * STEP_SIZE, 0, Y * STEP_SIZE]);
-                    normals.push([0, 1, 0]);
-                    textureCords.push([X * STEP_SIZE, Y * (-STEP_SIZE + 1)]);
+            var vertices: Float32Array = new Float32Array(VERTEX_COUNT * 3);
+            var normals: Float32Array = new Float32Array(VERTEX_COUNT * 3);
+            var textureCords: Float32Array = new Float32Array(VERTEX_COUNT * 2);
+            var indices: Uint16Array = new Uint16Array(QUADS_PER_ROW * resolution * 3);
+
+            let STEP_SIZE: number = TerrainTile.TILE_SIZE / resolution;
+            for (let X = 0; X < VERTICES_PER_ROW; X++) {
+                for (let Y = 0; Y < VERTICES_PER_ROW; Y++) {
+                    let CURRENT_INDEX: number = Y + X * VERTICES_PER_ROW;
+                    vertices[CURRENT_INDEX * 3] = X * STEP_SIZE;
+                    vertices[CURRENT_INDEX * 3 + 1] = 0;
+                    vertices[CURRENT_INDEX * 3 + 2] = Y * STEP_SIZE;
+                    
+                    normals[CURRENT_INDEX * 3] = 0;
+                    normals[CURRENT_INDEX * 3 + 1] = 1;
+                    normals[CURRENT_INDEX * 3 + 2] = 0;
+
+                    textureCords[CURRENT_INDEX * 2] = X * STEP_SIZE;
+                    textureCords[CURRENT_INDEX * 2 + 1] = Y * (-STEP_SIZE + 1);
                 }
             }
-            let TRIANGLES_PER_ROW: number = resolution * 2;
-            for (let index = 0; index < Math.pow(resolution, 2) * 2; index++){
-                let LOWER_LEFT_VERTEX: number = (index + TRIANGLES_PER_ROW) / TRIANGLES_PER_ROW;
-                let UPPER_LEFT_VERTEX: number = index / TRIANGLES_PER_ROW;
+            for (let INDEX = 0; INDEX < Math.pow(resolution, 2) * 2; INDEX++){
+                let UPPER_LEFT_VERTEX: number = INDEX * QUADS_PER_ROW;
+                let UPPER_RIGHT_VERTEX: number = UPPER_LEFT_VERTEX + 1;
+                let LOWER_LEFT_VERTEX: number = UPPER_LEFT_VERTEX + VERTICES_PER_ROW;
+                let LOWER_RIGHT_VERTEX: number = LOWER_LEFT_VERTEX + 1;
+                indices[INDEX * 6] =        LOWER_LEFT_VERTEX;
+                indices[INDEX * 6 + 1] =    UPPER_LEFT_VERTEX;
+                indices[INDEX * 6 + 2] =    UPPER_RIGHT_VERTEX;
+                indices[INDEX * 6 + 3] =    LOWER_LEFT_VERTEX;
+                indices[INDEX * 6 + 4] =    UPPER_RIGHT_VERTEX;
+                indices[INDEX * 6 + 5] =    LOWER_RIGHT_VERTEX;
             }
+            terrainTile.vaoID = await VAO.loadVAOFromArray(gl, true, 
+                new VBOData(gl, vertices, program, "in_pos", 3, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, indices, program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
+            );
+            terrainTile.pos = [0, 0, 0];
+            console.log(vertices);
+            console.log(indices);
+            resolve(terrainTile);
         });
     }
 }
@@ -532,6 +559,19 @@ class EntityRenderer {
         this.program.stop(gl);
     }
 }
+class TerrainRenderer{
+    program:Program;
+    public static async init(gl:WebGL2RenderingContext, programName:string): Promise<TerrainRenderer>{
+        return new Promise<TerrainRenderer>(async (resolve) => {
+            var terrainRenderer:TerrainRenderer = new TerrainRenderer();
+            terrainRenderer.program = await Program.loadProgram(gl, programName);
+            resolve(terrainRenderer);
+        });
+    }
+    public render(gl:WebGL2RenderingContext, projectionMatrix:mat4, terrainTiles:TerrainTile[]): void{
+        
+    }
+}
 class MasterRenderer {
     entityRenderer: EntityRenderer;
 
@@ -601,6 +641,8 @@ async function init(): Promise<void> {
 
     //@ts-ignore
     var sun: Light = new Light(vec3.fromValues(5, 7, 10));
+
+    var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.program, 2);
 
     var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.program, "cube", "teapot");
     var entity2: number = await Model.loadModelWithSeperateResources(gl, renderer.program, "teapot", "mytree");
