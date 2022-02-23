@@ -379,7 +379,11 @@ class Entity {
 class TerrainTile {
     vaoID;
     pos;
-    static TILE_SIZE = 100;
+    static TILE_SIZE = 20;
+    createTransformationMatrix() {
+        //@ts-ignore
+        return mat4.translate(mat4.create(), mat4.create(), vec3.negate(vec3.create(), this.pos));
+    }
     static async generateTerrainTile(gl, program, resolution) {
         return new Promise(async (resolve) => {
             var terrainTile = new TerrainTile();
@@ -454,44 +458,24 @@ class Camera {
 }
 class EntityRenderer {
     program;
-    drawMode;
-    projectionMatrix;
-    projectionViewMatrixLocation;
+    projectionViewTransformationMatrixLocation;
     transformationInverseTransposeMatrixLocation;
     reverseLightDirectionLocation;
     textureLocation;
     entityMap;
-    static FOV = 60;
-    static NEAR_PLANE = 0.1;
-    static FAR_PLANE = 100;
     static async init(gl, programName) {
         return new Promise(async (resolve) => {
             var renderer = new EntityRenderer();
             renderer.program = await Program.loadProgram(gl, programName);
-            renderer.drawMode = WebGL2RenderingContext.TRIANGLES;
-            //@ts-ignore
-            renderer.projectionMatrix = mat4.create();
-            renderer.updateProjectionMatrix(gl);
-            renderer.projectionViewMatrixLocation = renderer.program.getUniformLocation(gl, "u_projectionViewTransformationMatrix");
+            renderer.projectionViewTransformationMatrixLocation = renderer.program.getUniformLocation(gl, "u_projectionViewTransformationMatrix");
             renderer.transformationInverseTransposeMatrixLocation = renderer.program.getUniformLocation(gl, "u_transformInverseTransposeMatrix");
             renderer.reverseLightDirectionLocation = renderer.program.getUniformLocation(gl, "u_reverseLightDirection");
             renderer.textureLocation = renderer.program.getUniformLocation(gl, "u_texture");
             resolve(renderer);
         });
     }
-    static prepareViewport(gl) {
-        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    }
-    static clear(gl) {
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
-    }
     delete(gl) {
         this.program.delete(gl);
-    }
-    updateProjectionMatrix(gl) {
-        //@ts-ignore
-        mat4.perspective(this.projectionMatrix, toRadians(EntityRenderer.FOV), gl.canvas.width / gl.canvas.height, EntityRenderer.NEAR_PLANE, EntityRenderer.FAR_PLANE);
     }
     prepareEntities(entities) {
         this.entityMap = new Map();
@@ -502,23 +486,13 @@ class EntityRenderer {
             this.entityMap.get(currentEntity.modelID).push(currentEntity);
         });
     }
-    render(gl, camera, light, entities) {
+    render(gl, cameraPos, projectionViewMatrix, drawMode, light, entities) {
         this.prepareEntities(entities);
-        EntityRenderer.prepareViewport(gl);
-        EntityRenderer.clear(gl);
         gl.enable(WebGL2RenderingContext.DEPTH_TEST);
         gl.depthFunc(WebGL2RenderingContext.LEQUAL);
         gl.enable(WebGL2RenderingContext.CULL_FACE);
         gl.cullFace(WebGL2RenderingContext.BACK);
         this.program.start(gl);
-        //@ts-ignore
-        var projectionViewMatrix = mat4.create();
-        camera.updateViewMatrix();
-        if (camera.viewMatrix === null) {
-            console.log(camera.viewMatrix);
-        }
-        //@ts-ignore
-        mat4.mul(projectionViewMatrix, this.projectionMatrix, camera.viewMatrix);
         this.entityMap.forEach((currentEntities, currentModelID) => {
             VAO.getVAO(Model.getModel(currentModelID).vaoID).enableVAO(gl);
             Texture.getTexture(Model.getModel(currentModelID).textureID).activateTexture(gl);
@@ -527,13 +501,13 @@ class EntityRenderer {
                     gl.disable(WebGL2RenderingContext.CULL_FACE);
                 }
                 //@ts-ignore
-                if (currentEntity.disableFarPlaneCulling || vec3.distance(camera.pos, currentEntity.pos) > EntityRenderer.FAR_PLANE) {
+                if (currentEntity.disableFarPlaneCulling || vec3.distance(cameraPos, currentEntity.pos) > EntityRenderer.FAR_PLANE) {
                     return;
                 }
                 //@ts-ignore
                 var currentTransformationMatrix = currentEntity.createTransformationMatrix();
                 //@ts-ignore
-                this.program.loadDataToUniform(gl, this.projectionViewMatrixLocation, mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix));
+                this.program.loadDataToUniform(gl, this.projectionViewTransformationMatrixLocation, mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix));
                 //@ts-ignore
                 mat4.invert(currentTransformationMatrix, currentTransformationMatrix);
                 //@ts-ignore
@@ -541,10 +515,10 @@ class EntityRenderer {
                 this.program.loadDataToUniform(gl, this.transformationInverseTransposeMatrixLocation, currentTransformationMatrix);
                 this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
                 if (VAO.vaos[Model.getModel(currentModelID).vaoID].containsIndexBuffer) {
-                    gl.drawElements(this.drawMode, VAO.vaos[Model.getModel(currentModelID).vaoID].length, gl.UNSIGNED_SHORT, 0);
+                    gl.drawElements(drawMode, VAO.vaos[Model.getModel(currentModelID).vaoID].length, gl.UNSIGNED_SHORT, 0);
                 }
                 else {
-                    gl.drawArrays(this.drawMode, 0, VAO.vaos[Model.getModel(currentModelID).vaoID].length);
+                    gl.drawArrays(drawMode, 0, VAO.vaos[Model.getModel(currentModelID).vaoID].length);
                 }
                 if (currentEntity.disableBackFaceCulling) {
                     gl.enable(WebGL2RenderingContext.CULL_FACE);
@@ -557,8 +531,76 @@ class EntityRenderer {
         this.program.stop(gl);
     }
 }
+class TerrainRenderer {
+    program;
+    projectionViewTransformationMatrixLocation;
+    static async init(gl, programName) {
+        return new Promise(async (resolve) => {
+            var terrainRenderer = new TerrainRenderer();
+            terrainRenderer.program = await Program.loadProgram(gl, programName);
+            terrainRenderer.projectionViewTransformationMatrixLocation = terrainRenderer.program.getUniformLocation(gl, "u_projectionViewTransformationMatrix");
+            resolve(terrainRenderer);
+        });
+    }
+    delete(gl) {
+        this.program.delete(gl);
+    }
+    render(gl, projectionViewMatrix, drawMode, terrainTiles) {
+        gl.enable(WebGL2RenderingContext.DEPTH_TEST);
+        gl.enable(WebGL2RenderingContext.CULL_FACE);
+        gl.depthFunc(WebGL2RenderingContext.LEQUAL);
+        gl.cullFace(WebGL2RenderingContext.BACK);
+        this.program.start(gl);
+        terrainTiles.forEach((currentTerrainTile) => {
+            VAO.getVAO(currentTerrainTile.vaoID).enableVAO(gl);
+            //@ts-ignore
+            this.program.loadDataToUniform(gl, this.projectionViewTransformationMatrixLocation, mat4.mul(mat4.create(), projectionViewMatrix, currentTerrainTile.createTransformationMatrix()));
+            gl.drawElements(drawMode, VAO.getVAO(currentTerrainTile.vaoID).length, WebGL2RenderingContext.UNSIGNED_SHORT, 0);
+            VAO.getVAO(currentTerrainTile.vaoID).disableVAO(gl);
+        });
+        this.program.stop(gl);
+    }
+}
 class MasterRenderer {
     entityRenderer;
+    terrainRenderer;
+    projectionMatrix;
+    drawMode;
+    static FOV = 60;
+    static NEAR_PLANE = 0.1;
+    static FAR_PLANE = 100;
+    static async init(gl) {
+        return new Promise(async (resolve) => {
+            var masterRenderer = new MasterRenderer();
+            masterRenderer.entityRenderer = await EntityRenderer.init(gl, "entityShader");
+            masterRenderer.terrainRenderer = await TerrainRenderer.init(gl, "terrainShader");
+            //@ts-ignore
+            masterRenderer.projectionMatrix = mat4.create();
+            masterRenderer.updateProjectionMatrix(gl);
+            masterRenderer.drawMode = WebGL2RenderingContext.TRIANGLES;
+            resolve(masterRenderer);
+        });
+    }
+    static prepareViewport(gl) {
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+    }
+    static clear(gl) {
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
+    }
+    updateProjectionMatrix(gl) {
+        //@ts-ignore
+        mat4.perspective(this.projectionMatrix, toRadians(MasterRenderer.FOV), gl.canvas.width / gl.canvas.height, MasterRenderer.NEAR_PLANE, MasterRenderer.FAR_PLANE);
+    }
+    render(gl, camera, light, entities, terrainTiles) {
+        MasterRenderer.prepareViewport(gl);
+        MasterRenderer.clear(gl);
+        camera.updateViewMatrix();
+        //@ts-ignore
+        var projectionViewMatrix = mat4.mul(mat4.create(), this.projectionMatrix, camera.viewMatrix);
+        this.terrainRenderer.render(gl, projectionViewMatrix, this.drawMode, terrainTiles);
+        this.entityRenderer.render(gl, camera.pos, projectionViewMatrix, this.drawMode, light, entities);
+    }
 }
 async function loadImage(imageName) {
     return new Promise((resolve) => {
@@ -618,14 +660,14 @@ async function updateEntities(entities, deltaTime) {
 }
 async function init() {
     var gl = await createContext();
-    var renderer = await EntityRenderer.init(gl, "shader");
+    var renderer = await MasterRenderer.init(gl);
     //@ts-ignore
     var camera = new Camera(vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, 0));
     //@ts-ignore
     var sun = new Light(vec3.fromValues(5, 7, 10));
-    var tile = await TerrainTile.generateTerrainTile(gl, renderer.program, 2);
-    var entity = await Model.loadModelWithSeperateResources(gl, renderer.program, "cube", "teapot");
-    var entity2 = await Model.loadModelWithSeperateResources(gl, renderer.program, "teapot", "mytree");
+    var tile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 2);
+    var entity = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot");
+    var entity2 = await Model.loadModel(gl, renderer.entityRenderer.program, "mytree");
     var entities = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
     entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));
@@ -671,7 +713,7 @@ async function init() {
             renderer.updateProjectionMatrix(gl);
         }
         if (ev.code === "KeyM") {
-            renderer.drawMode = (renderer.drawMode === WebGL2RenderingContext.TRIANGLES) ? WebGL2RenderingContext.LINES : WebGL2RenderingContext.TRIANGLES;
+            renderer.drawMode = (renderer.drawMode === WebGL2RenderingContext.TRIANGLES) ? WebGL2RenderingContext.LINE_STRIP : WebGL2RenderingContext.TRIANGLES;
         }
     };
     document.onpointerlockchange = () => {
@@ -689,7 +731,7 @@ async function init() {
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
         updateEntities(entities, deltaTime);
-        renderer.render(gl, camera, sun, entities);
+        renderer.render(gl, camera, sun, entities, [tile]);
         window.requestAnimationFrame(mainLoop);
     }
 }
