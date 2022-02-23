@@ -130,13 +130,13 @@ class VBO {
     delete(gl) {
         gl.deleteBuffer(this.vbo);
     }
-    static async loadVBOFromArray(gl, vboData) {
+    static async loadVBOFromArray(gl, vboData, dynamicDraw = false) {
         return new Promise((resolve) => {
             var vbo = new VBO();
             vbo.vbo = gl.createBuffer();
             vbo.vboData = vboData;
             vbo.bindVBO(gl);
-            gl.bufferData((vbo.vboData.isIndexBuffer ? WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER : WebGL2RenderingContext.ARRAY_BUFFER), vboData.data, WebGL2RenderingContext.STATIC_DRAW);
+            gl.bufferData((vbo.vboData.isIndexBuffer ? WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER : WebGL2RenderingContext.ARRAY_BUFFER), vboData.data, dynamicDraw ? WebGL2RenderingContext.DYNAMIC_DRAW : WebGL2RenderingContext.STATIC_DRAW);
             if (!vbo.vboData.isIndexBuffer) {
                 gl.enableVertexAttribArray(vboData.attribLocation);
                 gl.vertexAttribPointer(vboData.attribLocation, vboData.elementSize, vboData.elementType, false, 0, 0);
@@ -188,21 +188,10 @@ class VAO {
     }
     static async loadVAOFromOBJFile(gl, program, objName) {
         return new Promise(async (resolve) => {
-            class Vertex {
-                position;
-                normal;
-                textureCord;
-                constructor(position, normal, textureCord) {
-                    this.position = position;
-                    this.normal = normal;
-                    this.textureCord = textureCord;
-                }
-            }
             var vertices = [];
             var normals = [];
             var textureCords = [];
             var indices = [];
-            var assembledVertices = [];
             var vertexArray;
             var normalArray;
             var textureCordArray;
@@ -217,7 +206,6 @@ class VAO {
                 normalArray[currentVertexPointer * 3] = currentNormal[0];
                 normalArray[currentVertexPointer * 3 + 1] = currentNormal[1];
                 normalArray[currentVertexPointer * 3 + 2] = currentNormal[2];
-                assembledVertices.push(new Vertex(vertices[currentVertexPointer], normals[Number.parseInt(vertex[2]) - 1], textureCords[Number.parseInt(vertex[1]) - 1]));
             }
             objFileContents.split(/\r\n|\r|\n/).forEach((currentLine) => {
                 if (currentLine.startsWith("v ")) {
@@ -255,10 +243,10 @@ class VAO {
                 vertexArray[i * 3 + 1] = currentVertex[1];
                 vertexArray[i * 3 + 2] = currentVertex[2];
             });
-            resolve(await VAO.loadVAOFromArray(gl, new VBOData(gl, vertexArray, program, "in_pos", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, normalArray, program, "in_normal", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, textureCordArray, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT), new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)));
+            resolve(await VAO.loadVAOFromArray(gl, false, new VBOData(gl, vertexArray, program, "in_pos", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, normalArray, program, "in_normal", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, textureCordArray, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT), new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)));
         });
     }
-    static async loadVAOFromArray(gl, ...vboData) {
+    static async loadVAOFromArray(gl, dynamicDraw = false, ...vboData) {
         return new Promise(async (resolve) => {
             var vao = new VAO();
             vao.vao = gl.createVertexArray();
@@ -267,7 +255,7 @@ class VAO {
             vao.vbos = await Promise.all((() => {
                 var vboPromises = [];
                 vboData.forEach((currentVBOData) => {
-                    vboPromises.push(VBO.loadVBOFromArray(gl, currentVBOData));
+                    vboPromises.push(VBO.loadVBOFromArray(gl, currentVBOData, dynamicDraw));
                 });
                 return vboPromises;
             })());
@@ -346,6 +334,15 @@ class Model {
             resolve(Model.models.length - 1);
         });
     }
+    static async loadModelWithSeperateResources(gl, program, modelName, textureName) {
+        return new Promise(async (resolve) => {
+            var model = new Model();
+            model.vaoID = await VAO.loadVAOFromOBJFile(gl, program, modelName);
+            model.textureID = await Texture.loadTexture(gl, textureName);
+            Model.models.push(model);
+            resolve(Model.models.length - 1);
+        });
+    }
 }
 class Entity {
     modelID;
@@ -366,7 +363,9 @@ class Entity {
         if (this.pos[1] <= 0) {
             this.pos[1] += Entity.G * deltaTime;
         }
+        this.rot[0] += 20 * deltaTime;
         this.rot[1] += 20 * deltaTime;
+        this.rot[2] += 20 * deltaTime;
     }
     createTransformationMatrix() {
         //@ts-ignore
@@ -375,6 +374,26 @@ class Entity {
         mat4.translate(transformationMatrix, transformationMatrix, vec3.negate(vec3.create(), this.pos));
         rotateXYZ(transformationMatrix, this.rot);
         return transformationMatrix;
+    }
+}
+class TerrainTile {
+    vaoID;
+    pos;
+    static TILE_SIZE = 100;
+    static async generateTerrainTile(gl, resolution) {
+        return new Promise((resolve) => {
+            var terrainTile = new TerrainTile();
+            var vertices = [];
+            var normals = [];
+            var textureCords = [];
+            var indices = [];
+            let step = 1 / resolution;
+            for (let x = 0; x < resolution; x++) {
+                for (let y = 0; y < resolution; y++) {
+                    vertices.push([x * step, 0, y * step]);
+                }
+            }
+        });
     }
 }
 class Light {
@@ -405,7 +424,7 @@ class Camera {
         this.viewMatrix = mat4.invert(this.viewMatrix, this.viewMatrix);
     }
 }
-class Renderer {
+class EntityRenderer {
     program;
     drawMode;
     projectionMatrix;
@@ -419,7 +438,7 @@ class Renderer {
     static FAR_PLANE = 100;
     static async init(gl, programName) {
         return new Promise(async (resolve) => {
-            var renderer = new Renderer();
+            var renderer = new EntityRenderer();
             renderer.program = await Program.loadProgram(gl, programName);
             renderer.drawMode = WebGL2RenderingContext.TRIANGLES;
             //@ts-ignore
@@ -444,7 +463,7 @@ class Renderer {
     }
     updateProjectionMatrix(gl) {
         //@ts-ignore
-        mat4.perspective(this.projectionMatrix, toRadians(Renderer.FOV), gl.canvas.width / gl.canvas.height, Renderer.NEAR_PLANE, Renderer.FAR_PLANE);
+        mat4.perspective(this.projectionMatrix, toRadians(EntityRenderer.FOV), gl.canvas.width / gl.canvas.height, EntityRenderer.NEAR_PLANE, EntityRenderer.FAR_PLANE);
     }
     prepareEntities(entities) {
         this.entityMap = new Map();
@@ -457,8 +476,8 @@ class Renderer {
     }
     render(gl, camera, light, entities) {
         this.prepareEntities(entities);
-        Renderer.prepareViewport(gl);
-        Renderer.clear(gl);
+        EntityRenderer.prepareViewport(gl);
+        EntityRenderer.clear(gl);
         gl.enable(WebGL2RenderingContext.DEPTH_TEST);
         gl.depthFunc(WebGL2RenderingContext.LEQUAL);
         gl.enable(WebGL2RenderingContext.CULL_FACE);
@@ -480,7 +499,7 @@ class Renderer {
                     gl.disable(WebGL2RenderingContext.CULL_FACE);
                 }
                 //@ts-ignore
-                if (currentEntity.disableFarPlaneCulling || vec3.distance(camera.pos, currentEntity.pos) > Renderer.FAR_PLANE) {
+                if (currentEntity.disableFarPlaneCulling || vec3.distance(camera.pos, currentEntity.pos) > EntityRenderer.FAR_PLANE) {
                     return;
                 }
                 //@ts-ignore
@@ -509,6 +528,9 @@ class Renderer {
         });
         this.program.stop(gl);
     }
+}
+class MasterRenderer {
+    entityRenderer;
 }
 async function loadImage(imageName) {
     return new Promise((resolve) => {
@@ -568,16 +590,16 @@ async function updateEntities(entities, deltaTime) {
 }
 async function init() {
     var gl = await createContext();
-    var renderer = await Renderer.init(gl, "shader");
+    var renderer = await EntityRenderer.init(gl, "shader");
     //@ts-ignore
     var camera = new Camera(vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, 0));
     //@ts-ignore
     var sun = new Light(vec3.fromValues(5, 7, 10));
-    var suzanne = await Model.loadModel(gl, renderer.program, "teapot");
+    var entity = await Model.loadModelWithSeperateResources(gl, renderer.program, "cube", "teapot");
+    var entity2 = await Model.loadModelWithSeperateResources(gl, renderer.program, "teapot", "mytree");
     var entities = [];
-    for (let i = 0; i < 1; i++) {
-        entities.push(new Entity(suzanne, [6 * i, 0, 6], [0, 0, 0], true));
-    }
+    entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
+    entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));
     var then = millisToSeconds(Date.now());
     var deltaTime;
     var isPointerLocked = false;

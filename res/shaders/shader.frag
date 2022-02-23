@@ -12,5 +12,5 @@ void main(){
     vec3 normalized = normalize(out_normal);
     float light = dot(normalized, u_reverseLightDirection);
     out_color = texture(u_texture, out_texCord);
-    out_color.rgb *= max(light, 0.2);
+    out_color.rgb *= max(light, 0.1);
 }
