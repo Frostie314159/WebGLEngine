@@ -309,7 +309,7 @@ class Texture {
             var texture = new Texture();
             texture.texture = gl.createTexture();
             texture.bindTexture(gl);
-            var image = await loadImage(`res/assets/${textureName}.png`);
+            var image = await loadImage(`res/assets/${textureName}`);
             gl.texImage2D(WebGL2RenderingContext.TEXTURE_2D, 0, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.UNSIGNED_BYTE, image);
             gl.generateMipmap(WebGL2RenderingContext.TEXTURE_2D);
             texture.unbindTexture(gl);
@@ -329,7 +329,7 @@ class Model {
         return new Promise(async (resolve) => {
             var model = new Model();
             model.vaoID = await VAO.loadVAOFromOBJFile(gl, program, name);
-            model.textureID = await Texture.loadTexture(gl, name);
+            model.textureID = await Texture.loadTexture(gl, `${name}.png`);
             Model.models.push(model);
             resolve(Model.models.length - 1);
         });
@@ -378,13 +378,14 @@ class Entity {
 }
 class TerrainTile {
     vaoID;
+    textureID;
     pos;
-    static TILE_SIZE = 20;
+    static TILE_SIZE = 1;
     createTransformationMatrix() {
         //@ts-ignore
         return mat4.translate(mat4.create(), mat4.create(), vec3.negate(vec3.create(), this.pos));
     }
-    static async generateTerrainTile(gl, program, resolution) {
+    static async generateTerrainTile(gl, program, resolution, textureID) {
         return new Promise(async (resolve) => {
             var terrainTile = new TerrainTile();
             let VERTICES_PER_ROW = resolution + 1;
@@ -396,34 +397,37 @@ class TerrainTile {
             var indices = new Uint16Array(QUADS_PER_ROW * resolution * 3);
             let STEP_SIZE = TerrainTile.TILE_SIZE / resolution;
             for (let X = 0; X < VERTICES_PER_ROW; X++) {
-                for (let Y = 0; Y < VERTICES_PER_ROW; Y++) {
-                    let CURRENT_INDEX = Y + X * VERTICES_PER_ROW;
-                    vertices[CURRENT_INDEX * 3] = X * STEP_SIZE;
-                    vertices[CURRENT_INDEX * 3 + 1] = 0;
-                    vertices[CURRENT_INDEX * 3 + 2] = Y * STEP_SIZE;
-                    normals[CURRENT_INDEX * 3] = 0;
-                    normals[CURRENT_INDEX * 3 + 1] = 1;
-                    normals[CURRENT_INDEX * 3 + 2] = 0;
-                    textureCords[CURRENT_INDEX * 2] = X * STEP_SIZE;
-                    textureCords[CURRENT_INDEX * 2 + 1] = Y * (-STEP_SIZE + 1);
+                for (let Z = 0; Z < VERTICES_PER_ROW; Z++) {
+                    let INDEX = Z + X * VERTICES_PER_ROW;
+                    vertices[INDEX * 3] = (X * 2 - 1) * STEP_SIZE;
+                    vertices[INDEX * 3 + 1] = 0;
+                    vertices[INDEX * 3 + 2] = (Z * 2 - 1) * STEP_SIZE;
+                    normals[INDEX * 3] = 0;
+                    normals[INDEX * 3 + 1] = 1;
+                    normals[INDEX * 3 + 2] = 0;
+                    textureCords[INDEX * 2] = Z * (-STEP_SIZE + 1);
+                    textureCords[INDEX * 2 + 1] = X * (-STEP_SIZE + 1);
                 }
             }
-            for (let INDEX = 0; INDEX < Math.pow(resolution, 2) * 2; INDEX++) {
-                let UPPER_LEFT_VERTEX = INDEX * QUADS_PER_ROW;
-                let UPPER_RIGHT_VERTEX = UPPER_LEFT_VERTEX + 1;
-                let LOWER_LEFT_VERTEX = UPPER_LEFT_VERTEX + VERTICES_PER_ROW;
-                let LOWER_RIGHT_VERTEX = LOWER_LEFT_VERTEX + 1;
-                indices[INDEX * 6] = LOWER_LEFT_VERTEX;
-                indices[INDEX * 6 + 1] = UPPER_LEFT_VERTEX;
-                indices[INDEX * 6 + 2] = UPPER_RIGHT_VERTEX;
-                indices[INDEX * 6 + 3] = LOWER_LEFT_VERTEX;
-                indices[INDEX * 6 + 4] = UPPER_RIGHT_VERTEX;
-                indices[INDEX * 6 + 5] = LOWER_RIGHT_VERTEX;
+            for (let Z = 0; Z < resolution; Z++) {
+                for (let X = 0; X < resolution; X++) {
+                    let INDEX = Z * resolution + X;
+                    let UPPER_LEFT_VERTEX = X + Z * VERTICES_PER_ROW;
+                    let UPPER_RIGHT_VERTEX = UPPER_LEFT_VERTEX + 1;
+                    let LOWER_LEFT_VERTEX = X + VERTICES_PER_ROW * (Z + 1);
+                    let LOWER_RIGHT_VERTEX = LOWER_LEFT_VERTEX + 1;
+                    indices[INDEX * 6] = UPPER_LEFT_VERTEX;
+                    indices[INDEX * 6 + 1] = UPPER_RIGHT_VERTEX;
+                    indices[INDEX * 6 + 2] = LOWER_LEFT_VERTEX;
+                    indices[INDEX * 6 + 3] = LOWER_LEFT_VERTEX;
+                    indices[INDEX * 6 + 4] = UPPER_RIGHT_VERTEX;
+                    indices[INDEX * 6 + 5] = LOWER_RIGHT_VERTEX;
+                }
             }
             terrainTile.vaoID = await VAO.loadVAOFromArray(gl, true, new VBOData(gl, vertices, program, "in_pos", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, indices, program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true));
+            terrainTile.textureID = textureID;
             terrainTile.pos = [0, 0, 0];
-            console.log(vertices);
-            console.log(indices);
+            console.log(textureCords);
             resolve(terrainTile);
         });
     }
@@ -534,11 +538,13 @@ class EntityRenderer {
 class TerrainRenderer {
     program;
     projectionViewTransformationMatrixLocation;
+    textureLocation;
     static async init(gl, programName) {
         return new Promise(async (resolve) => {
             var terrainRenderer = new TerrainRenderer();
             terrainRenderer.program = await Program.loadProgram(gl, programName);
             terrainRenderer.projectionViewTransformationMatrixLocation = terrainRenderer.program.getUniformLocation(gl, "u_projectionViewTransformationMatrix");
+            terrainRenderer.textureLocation = terrainRenderer.program.getUniformLocation(gl, "u_texture");
             resolve(terrainRenderer);
         });
     }
@@ -547,15 +553,16 @@ class TerrainRenderer {
     }
     render(gl, projectionViewMatrix, drawMode, terrainTiles) {
         gl.enable(WebGL2RenderingContext.DEPTH_TEST);
-        gl.enable(WebGL2RenderingContext.CULL_FACE);
+        gl.disable(WebGL2RenderingContext.CULL_FACE);
         gl.depthFunc(WebGL2RenderingContext.LEQUAL);
-        gl.cullFace(WebGL2RenderingContext.BACK);
         this.program.start(gl);
         terrainTiles.forEach((currentTerrainTile) => {
             VAO.getVAO(currentTerrainTile.vaoID).enableVAO(gl);
+            Texture.getTexture(currentTerrainTile.textureID).activateTexture(gl);
             //@ts-ignore
             this.program.loadDataToUniform(gl, this.projectionViewTransformationMatrixLocation, mat4.mul(mat4.create(), projectionViewMatrix, currentTerrainTile.createTransformationMatrix()));
             gl.drawElements(drawMode, VAO.getVAO(currentTerrainTile.vaoID).length, WebGL2RenderingContext.UNSIGNED_SHORT, 0);
+            Texture.getTexture(currentTerrainTile.textureID).disableTexture(gl);
             VAO.getVAO(currentTerrainTile.vaoID).disableVAO(gl);
         });
         this.program.stop(gl);
@@ -662,11 +669,11 @@ async function init() {
     var gl = await createContext();
     var renderer = await MasterRenderer.init(gl);
     //@ts-ignore
-    var camera = new Camera(vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, 0));
+    var camera = new Camera(vec3.fromValues(0, -1, 0), vec3.fromValues(0, 0, 0));
     //@ts-ignore
     var sun = new Light(vec3.fromValues(5, 7, 10));
-    var tile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 2);
-    var entity = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot");
+    var tile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 1, await Texture.loadTexture(gl, "grass.jpg"));
+    var entity = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
     var entity2 = await Model.loadModel(gl, renderer.entityRenderer.program, "mytree");
     var entities = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
@@ -713,7 +720,7 @@ async function init() {
             renderer.updateProjectionMatrix(gl);
         }
         if (ev.code === "KeyM") {
-            renderer.drawMode = (renderer.drawMode === WebGL2RenderingContext.TRIANGLES) ? WebGL2RenderingContext.LINE_STRIP : WebGL2RenderingContext.TRIANGLES;
+            renderer.drawMode = (renderer.drawMode === WebGL2RenderingContext.TRIANGLES) ? WebGL2RenderingContext.LINE_LOOP : WebGL2RenderingContext.TRIANGLES;
         }
     };
     document.onpointerlockchange = () => {
