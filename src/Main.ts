@@ -1,5 +1,6 @@
 //@ts-ignore
 import type { vec2, vec3, vec4, mat2, mat3, mat4, glMatrix, quat } from "gl-matrix";
+import type { seedrandom } from "./node_modules/seedrandom/seedrandom.min.js";
 //@ts-ignore
 const { vec2, vec3, vec4, mat2, mat3, mat4 } = glMatrix;
 class Program {
@@ -375,12 +376,41 @@ class TerrainTile {
     vaoID: number;
     textureID: number;
     pos: vec3;
-    static TILE_SIZE = 1;
+    static TILE_SIZE = 5;
+    static AMPLITUDE = 2;
     public createTransformationMatrix(): mat4 {
         //@ts-ignore
         return mat4.translate(mat4.create(), mat4.create(), vec3.negate(vec3.create(), this.pos));
     }
-    public static async generateTerrainTile(gl: WebGL2RenderingContext, program: Program, resolution: number, textureID:number): Promise<TerrainTile> {
+    private static getInterpolatedNoise(seed: number, x: number, z: number): number {
+        let fracX: number = x % 1;
+        let fracZ: number = z % 1;
+        let v1: number = TerrainTile.getSmoothNoise(seed, fracX, fracZ); 
+        let v2: number = TerrainTile.getSmoothNoise(seed, fracX + 1, fracZ); 
+        let v3: number = TerrainTile.getSmoothNoise(seed, fracX, fracZ + 1); 
+        let v4: number = TerrainTile.getSmoothNoise(seed, fracX + 1, fracZ + 1);
+        let i1: number = TerrainTile.interpolate(v1, v2, fracX);
+        let i2: number = TerrainTile.interpolate(v3, v4, fracX);
+        return TerrainTile.interpolate(i1, i2, fracZ);
+    }
+    private static interpolate(a: number, b: number, blend: number): number {
+        let f: number = (1 - Math.cos(blend * Math.PI)) * 0.5;
+        return a * (1 - f) + b * f;
+    }
+    private static getSmoothNoise(seed: number, x: number, z: number): number {
+        let corners: number = (TerrainTile.getNoise(seed, x - 1, z - 1) + TerrainTile.getNoise(seed, x - 1, z + 1) + TerrainTile.getNoise(seed, x + 1, z - 1) + TerrainTile.getNoise(seed, x + 1, z + 1)) / 16;
+        let sides: number = (TerrainTile.getNoise(seed, x - 1, z) + TerrainTile.getNoise(seed, x, z + 1) + TerrainTile.getNoise(seed, x + 1, z) + TerrainTile.getNoise(seed, x, z - 1)) / 8;
+        let middle: number = TerrainTile.getNoise(seed, x, z) / 4;
+        return corners + sides + middle;
+    }
+    private static getHeight(seed: number, x: number, z: number): number {
+        return TerrainTile.getInterpolatedNoise(seed, x, z) * TerrainTile.AMPLITUDE;
+    }
+    private static getNoise(seed: number, x: number, z: number): number {
+        //@ts-ignore
+        return (new Math.seedrandom(Math.ceil(x * 10000 + z * 100000 * seed)))() * 2 - 1;
+    }
+    public static async generateTerrainTile(gl: WebGL2RenderingContext, program: Program, resolution: number, textureID: number, seed: number): Promise<TerrainTile> {
         return new Promise<TerrainTile>(async (resolve) => {
             var terrainTile: TerrainTile = new TerrainTile();
 
@@ -398,25 +428,25 @@ class TerrainTile {
                 for (let Z = 0; Z < VERTICES_PER_ROW; Z++) {
                     let INDEX: number = Z + X * VERTICES_PER_ROW;
                     vertices[INDEX * 3] = (X * 2 - 1) * STEP_SIZE;
-                    vertices[INDEX * 3 + 1] = 0;
                     vertices[INDEX * 3 + 2] = (Z * 2 - 1) * STEP_SIZE;
+                    vertices[INDEX * 3 + 1] = TerrainTile.getHeight(seed, X * STEP_SIZE, Z * STEP_SIZE);
 
                     normals[INDEX * 3] = 0;
                     normals[INDEX * 3 + 1] = 1;
                     normals[INDEX * 3 + 2] = 0;
 
-                    textureCords[INDEX * 2] = Z * (-STEP_SIZE + 1);
-                    textureCords[INDEX * 2 + 1] = X * (-STEP_SIZE + 1);
+                    textureCords[INDEX * 2] = Z * STEP_SIZE;
+                    textureCords[INDEX * 2 + 1] = X * STEP_SIZE;
                 }
             }
-            for(let Z = 0; Z < resolution; Z++){
-                for(let X = 0; X < resolution; X++){
+            for (let Z = 0; Z < resolution; Z++) {
+                for (let X = 0; X < resolution; X++) {
                     let INDEX = Z * resolution + X;
                     let UPPER_LEFT_VERTEX: number = X + Z * VERTICES_PER_ROW;
                     let UPPER_RIGHT_VERTEX: number = UPPER_LEFT_VERTEX + 1;
                     let LOWER_LEFT_VERTEX: number = X + VERTICES_PER_ROW * (Z + 1);
                     let LOWER_RIGHT_VERTEX: number = LOWER_LEFT_VERTEX + 1;
-                    
+
                     indices[INDEX * 6] = UPPER_LEFT_VERTEX;
                     indices[INDEX * 6 + 1] = UPPER_RIGHT_VERTEX;
                     indices[INDEX * 6 + 2] = LOWER_LEFT_VERTEX;
@@ -427,6 +457,7 @@ class TerrainTile {
             }
             terrainTile.vaoID = await VAO.loadVAOFromArray(gl, true,
                 new VBOData(gl, vertices, program, "in_pos", 3, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, textureCords, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT),
                 new VBOData(gl, indices, program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
             );
             terrainTile.textureID = textureID;
@@ -554,7 +585,7 @@ class TerrainRenderer {
     public delete(gl: WebGL2RenderingContext): void {
         this.program.delete(gl);
     }
-    public render(gl: WebGL2RenderingContext, projectionViewMatrix:mat4, drawMode: number, terrainTiles: TerrainTile[]): void {
+    public render(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, drawMode: number, terrainTiles: TerrainTile[]): void {
         gl.enable(WebGL2RenderingContext.DEPTH_TEST);
         gl.disable(WebGL2RenderingContext.CULL_FACE);
         gl.depthFunc(WebGL2RenderingContext.LEQUAL);
@@ -602,7 +633,7 @@ class MasterRenderer {
         //@ts-ignore
         mat4.perspective(this.projectionMatrix, toRadians(MasterRenderer.FOV), gl.canvas.width / gl.canvas.height, MasterRenderer.NEAR_PLANE, MasterRenderer.FAR_PLANE);
     }
-    public render(gl: WebGL2RenderingContext, camera: Camera, light: Light, entities: Entity[], terrainTiles: TerrainTile[]): void{
+    public render(gl: WebGL2RenderingContext, camera: Camera, light: Light, entities: Entity[], terrainTiles: TerrainTile[]): void {
         MasterRenderer.prepareViewport(gl);
         MasterRenderer.clear(gl);
         camera.updateViewMatrix();
@@ -652,6 +683,7 @@ async function createContext(): Promise<WebGL2RenderingContext> {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
         canvas.id = "webgl_canvas";
+        canvas.style.background = "black";
         document.body.appendChild(canvas);
         let gl: WebGL2RenderingContext = canvas.getContext("webgl2");
         if (gl) {
@@ -678,10 +710,10 @@ async function init(): Promise<void> {
     //@ts-ignore
     var sun: Light = new Light(vec3.fromValues(5, 7, 10));
 
-    var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 1, await Texture.loadTexture(gl, "grass.jpg"));
+    var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 20, await Texture.loadTexture(gl, "grass.jpg"), 343545454);
 
     var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
-    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "mytree");
+    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
     var entities: Entity[] = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
     entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));
