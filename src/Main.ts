@@ -376,41 +376,55 @@ class TerrainTile {
     vaoID: number;
     textureID: number;
     pos: vec3;
-    static TILE_SIZE = 5;
-    static AMPLITUDE = 2;
+    public static TILE_SIZE: number = 25;
+    private static AMPLITUDE: number = 10;
+    private static OCTAVES: number = 2;
+    private static ROUGHNESS: number = 0.3;
     public createTransformationMatrix(): mat4 {
         //@ts-ignore
         return mat4.translate(mat4.create(), mat4.create(), vec3.negate(vec3.create(), this.pos));
     }
     private static getInterpolatedNoise(seed: number, x: number, z: number): number {
-        let fracX: number = x % 1;
-        let fracZ: number = z % 1;
-        let v1: number = TerrainTile.getSmoothNoise(seed, fracX, fracZ); 
-        let v2: number = TerrainTile.getSmoothNoise(seed, fracX + 1, fracZ); 
-        let v3: number = TerrainTile.getSmoothNoise(seed, fracX, fracZ + 1); 
-        let v4: number = TerrainTile.getSmoothNoise(seed, fracX + 1, fracZ + 1);
-        let i1: number = TerrainTile.interpolate(v1, v2, fracX);
-        let i2: number = TerrainTile.interpolate(v3, v4, fracX);
+        const intX: number = Math.floor(x);
+        const intZ: number = Math.floor(z);
+        const fracX: number = x - intX;
+        const fracZ: number = z - intZ;
+
+        const v1: number = TerrainTile.getSmoothNoise(seed, intX, intZ);
+        const v2: number = TerrainTile.getSmoothNoise(seed, intX + 1, intZ);
+        const v3: number = TerrainTile.getSmoothNoise(seed, intX, intZ + 1);
+        const v4: number = TerrainTile.getSmoothNoise(seed, intX + 1, intZ + 1);
+
+        const i1: number = TerrainTile.interpolate(v1, v2, fracX);
+        const i2: number = TerrainTile.interpolate(v3, v4, fracX);
         return TerrainTile.interpolate(i1, i2, fracZ);
     }
     private static interpolate(a: number, b: number, blend: number): number {
-        let f: number = (1 - Math.cos(blend * Math.PI)) * 0.5;
+        const theta: number = blend * Math.PI;
+        const f: number = (1 - Math.cos(theta)) * 0.5;
         return a * (1 - f) + b * f;
     }
     private static getSmoothNoise(seed: number, x: number, z: number): number {
-        let corners: number = (TerrainTile.getNoise(seed, x - 1, z - 1) + TerrainTile.getNoise(seed, x - 1, z + 1) + TerrainTile.getNoise(seed, x + 1, z - 1) + TerrainTile.getNoise(seed, x + 1, z + 1)) / 16;
-        let sides: number = (TerrainTile.getNoise(seed, x - 1, z) + TerrainTile.getNoise(seed, x, z + 1) + TerrainTile.getNoise(seed, x + 1, z) + TerrainTile.getNoise(seed, x, z - 1)) / 8;
-        let middle: number = TerrainTile.getNoise(seed, x, z) / 4;
+        const corners: number = (TerrainTile.getNoise(seed, x - 1, z - 1) + TerrainTile.getNoise(seed, x - 1, z + 1) + TerrainTile.getNoise(seed, x + 1, z - 1) + TerrainTile.getNoise(seed, x + 1, z + 1)) / 16;
+        const sides: number = (TerrainTile.getNoise(seed, x - 1, z) + TerrainTile.getNoise(seed, x, z + 1) + TerrainTile.getNoise(seed, x + 1, z) + TerrainTile.getNoise(seed, x, z - 1)) / 8;
+        const middle: number = TerrainTile.getNoise(seed, x, z) / 4;
         return corners + sides + middle;
     }
     private static getHeight(seed: number, x: number, z: number): number {
-        return TerrainTile.getInterpolatedNoise(seed, x, z) * TerrainTile.AMPLITUDE;
+        var total: number = 0;
+        const d: number = Math.pow(2, TerrainTile.OCTAVES - 1);
+        for (let i = 0; i < TerrainTile.OCTAVES; i++) {
+            const freq: number = Math.pow(2, i) / d;
+            const amp: number = Math.pow(TerrainTile.ROUGHNESS, i) * TerrainTile.AMPLITUDE;
+            total += TerrainTile.getInterpolatedNoise(seed, x * freq, z * freq) * amp;
+        }
+        return total;
     }
     private static getNoise(seed: number, x: number, z: number): number {
         //@ts-ignore
-        return (new Math.seedrandom(Math.ceil(x * 10000 + z * 100000 * seed)))() * 2 - 1;
+        return (new Math.seedrandom(Math.ceil(x * 123123 + z * 324234 + seed)))() * 2 - 1;
     }
-    public static async generateTerrainTile(gl: WebGL2RenderingContext, program: Program, resolution: number, textureID: number, seed: number): Promise<TerrainTile> {
+    public static async generateTerrainTile(gl: WebGL2RenderingContext, program: Program, resolution: number, pos: vec3, textureID: number, seed: number): Promise<TerrainTile> {
         return new Promise<TerrainTile>(async (resolve) => {
             var terrainTile: TerrainTile = new TerrainTile();
 
@@ -424,19 +438,75 @@ class TerrainTile {
             var indices: Uint16Array = new Uint16Array(QUADS_PER_ROW * resolution * 3);
 
             let STEP_SIZE: number = TerrainTile.TILE_SIZE / resolution;
-            for (let X = 0; X < VERTICES_PER_ROW; X++) {
-                for (let Z = 0; Z < VERTICES_PER_ROW; Z++) {
+            for (let Z = 0; Z < VERTICES_PER_ROW; Z++) {
+                for (let X = 0; X < VERTICES_PER_ROW; X++) {
                     let INDEX: number = Z + X * VERTICES_PER_ROW;
                     vertices[INDEX * 3] = (X * 2 - 1) * STEP_SIZE;
                     vertices[INDEX * 3 + 2] = (Z * 2 - 1) * STEP_SIZE;
-                    vertices[INDEX * 3 + 1] = TerrainTile.getHeight(seed, X * STEP_SIZE, Z * STEP_SIZE);
-
-                    normals[INDEX * 3] = 0;
-                    normals[INDEX * 3 + 1] = 1;
-                    normals[INDEX * 3 + 2] = 0;
+                    vertices[INDEX * 3 + 1] = TerrainTile.getHeight(seed, (X) * STEP_SIZE, (Z) * STEP_SIZE);
 
                     textureCords[INDEX * 2] = Z * STEP_SIZE;
                     textureCords[INDEX * 2 + 1] = X * STEP_SIZE;
+                }
+            }
+            for (let X = 0; X < VERTICES_PER_ROW; X++) {
+                for (let Z = 0; Z < VERTICES_PER_ROW; Z++) {
+                    let INDEX: number = Z + X * VERTICES_PER_ROW;
+                    let heightL: number;
+                    let heightR: number;
+                    let heightD: number;
+                    let heightU: number;
+                    if (X == 0 && Z == 0) {
+                        heightL = TerrainTile.getHeight(seed, (X - 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightR = vertices[(INDEX + 1) * 3 + 1];
+                        heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
+                        heightU = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z + 1) * STEP_SIZE);
+                    } else if (X == 0 && Z == resolution) {
+                        heightL = vertices[(INDEX - 1) * 3 + 1];
+                        heightR = TerrainTile.getHeight(seed, (X + 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
+                        heightU = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z + 1) * STEP_SIZE);
+                    } else if (X == resolution && Z == 0) {
+                        heightL = TerrainTile.getHeight(seed, (X - 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightR = vertices[(INDEX + 1) * 3 + 1];
+                        heightD = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z - 1) * STEP_SIZE);
+                        heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
+                    } else if (X == resolution && Z == resolution) {
+                        heightL = vertices[(INDEX - 1) * 3 + 1];
+                        heightR = TerrainTile.getHeight(seed, (X + 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightD = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z - 1) * STEP_SIZE);
+                        heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
+                    } else if (X == 0) {
+                        heightL = vertices[(INDEX - 1) * 3 + 1];
+                        heightR = vertices[(INDEX + 1) * 3 + 1];
+                        heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
+                        heightU = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z + 1) * STEP_SIZE);
+                    } else if (X == resolution) {
+                        heightL = vertices[(INDEX - 1) * 3 + 1];
+                        heightR = vertices[(INDEX + 1) * 3 + 1];
+                        heightD = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z - 1) * STEP_SIZE);
+                        heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
+                    } else if (Z == 0) {
+                        heightL = TerrainTile.getHeight(seed, (X - 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightR = vertices[(INDEX + 1) * 3 + 1];
+                        heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
+                        heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
+                    } else if (Z == resolution) {
+                        heightL = vertices[(INDEX - 1) * 3 + 1];
+                        heightR = TerrainTile.getHeight(seed, (X + 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
+                        heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
+                    } else {
+                        heightL = vertices[(INDEX - 1) * 3 + 1];
+                        heightR = vertices[(INDEX + 1) * 3 + 1];
+                        heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
+                        heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
+                    }
+                    //@ts-ignore
+                    const normal: vec3 = vec3.normalize(vec3.create(), vec3.fromValues(heightU - heightD, 2, heightL - heightR));
+                    normals[INDEX * 3] = normal[0];
+                    normals[INDEX * 3 + 1] = normal[1];
+                    normals[INDEX * 3 + 2] = normal[2];
                 }
             }
             for (let Z = 0; Z < resolution; Z++) {
@@ -457,12 +527,12 @@ class TerrainTile {
             }
             terrainTile.vaoID = await VAO.loadVAOFromArray(gl, true,
                 new VBOData(gl, vertices, program, "in_pos", 3, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, normals, program, "in_normal", 3, WebGL2RenderingContext.FLOAT),
                 new VBOData(gl, textureCords, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT),
                 new VBOData(gl, indices, program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
             );
             terrainTile.textureID = textureID;
-            terrainTile.pos = [0, 0, 0];
-            console.log(textureCords);
+            terrainTile.pos = pos;
             resolve(terrainTile);
         });
     }
@@ -480,7 +550,7 @@ class Camera {
     rot: vec3;
     pos: vec3;
     viewMatrix: mat4;
-    static SPEED: number = 5;
+    static SPEED: number = 20;
     constructor(pos: vec3, rot: vec3) {
         this.rot = rot;
         this.pos = pos;
@@ -504,19 +574,19 @@ class EntityRenderer {
     entityMap: Map<number, Entity[]>;
     public static async init(gl: WebGL2RenderingContext, programName: string): Promise<EntityRenderer> {
         return new Promise<EntityRenderer>(async (resolve) => {
-            var renderer: EntityRenderer = new EntityRenderer();
-            renderer.program = await Program.loadProgram(gl, programName);
-            renderer.projectionViewTransformationMatrixLocation = renderer.program.getUniformLocation(gl, "u_projectionViewTransformationMatrix");
-            renderer.transformationInverseTransposeMatrixLocation = renderer.program.getUniformLocation(gl, "u_transformInverseTransposeMatrix");
-            renderer.reverseLightDirectionLocation = renderer.program.getUniformLocation(gl, "u_reverseLightDirection");
-            renderer.textureLocation = renderer.program.getUniformLocation(gl, "u_texture");
-            resolve(renderer);
+            var entityRenderer: EntityRenderer = new EntityRenderer();
+            entityRenderer.program = await Program.loadProgram(gl, programName);
+            entityRenderer.projectionViewTransformationMatrixLocation = entityRenderer.program.getUniformLocation(gl, "u_projectionViewTransformationMatrix");
+            entityRenderer.transformationInverseTransposeMatrixLocation = entityRenderer.program.getUniformLocation(gl, "u_transformInverseTransposeMatrix");
+            entityRenderer.reverseLightDirectionLocation = entityRenderer.program.getUniformLocation(gl, "u_reverseLightDirection");
+            entityRenderer.textureLocation = entityRenderer.program.getUniformLocation(gl, "u_texture");
+            resolve(entityRenderer);
         });
     }
     public delete(gl: WebGL2RenderingContext): void {
         this.program.delete(gl);
     }
-    public prepareEntities(entities: Entity[]): void {
+    private prepareEntities(entities: Entity[]): void {
         this.entityMap = new Map<number, Entity[]>();
         entities.forEach((currentEntity: Entity) => {
             if (!this.entityMap.has(currentEntity.modelID)) {
@@ -525,13 +595,32 @@ class EntityRenderer {
             this.entityMap.get(currentEntity.modelID).push(currentEntity);
         });
     }
-    public render(gl: WebGL2RenderingContext, cameraPos: vec3, projectionViewMatrix: mat4, drawMode: number, light: Light, entities: Entity[]): void {
+    private prepare(gl: WebGL2RenderingContext, entities: Entity[]): void {
         this.prepareEntities(entities);
         gl.enable(WebGL2RenderingContext.DEPTH_TEST);
         gl.depthFunc(WebGL2RenderingContext.LEQUAL);
         gl.enable(WebGL2RenderingContext.CULL_FACE);
         gl.cullFace(WebGL2RenderingContext.BACK);
         this.program.start(gl);
+    }
+    private finish(gl: WebGL2RenderingContext): void {
+        this.program.stop(gl);
+    }
+    private loadDataToUniforms(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, light: Light, currentEntity: Entity): void {
+        var currentTransformationMatrix: mat4 = currentEntity.createTransformationMatrix();
+        //@ts-ignore
+        var projectionViewTransformationMatrix: mat4 = mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix);
+        //@ts-ignore
+        var transformationInverseMatrix: mat4 = mat4.invert(mat4.create(), currentTransformationMatrix);
+        //@ts-ignore
+        var transformationInverseTransposeMatrix: mat4 = mat4.transpose(mat4.create(), transformationInverseMatrix);
+
+        this.program.loadDataToUniform(gl, this.projectionViewTransformationMatrixLocation, projectionViewTransformationMatrix);
+        this.program.loadDataToUniform(gl, this.transformationInverseTransposeMatrixLocation, transformationInverseTransposeMatrix);
+        this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
+    }
+    public render(gl: WebGL2RenderingContext, cameraPos: vec3, projectionViewMatrix: mat4, drawMode: number, light: Light, entities: Entity[]): void {
+        this.prepare(gl, entities);
         this.entityMap.forEach((currentEntities: Entity[], currentModelID: number) => {
             VAO.getVAO(Model.getModel(currentModelID).vaoID).enableVAO(gl);
             Texture.getTexture(Model.getModel(currentModelID).textureID).activateTexture(gl);
@@ -543,16 +632,7 @@ class EntityRenderer {
                 if (currentEntity.disableFarPlaneCulling || vec3.distance(cameraPos, currentEntity.pos) > EntityRenderer.FAR_PLANE) {
                     return;
                 }
-                //@ts-ignore
-                var currentTransformationMatrix: mat4 = currentEntity.createTransformationMatrix();
-                //@ts-ignore
-                this.program.loadDataToUniform(gl, this.projectionViewTransformationMatrixLocation, mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix));
-                //@ts-ignore
-                mat4.invert(currentTransformationMatrix, currentTransformationMatrix);
-                //@ts-ignore
-                mat4.transpose(currentTransformationMatrix, currentTransformationMatrix);
-                this.program.loadDataToUniform(gl, this.transformationInverseTransposeMatrixLocation, currentTransformationMatrix);
-                this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
+                this.loadDataToUniforms(gl, projectionViewMatrix, light, currentEntity);
                 if (VAO.vaos[Model.getModel(currentModelID).vaoID].containsIndexBuffer) {
                     gl.drawElements(drawMode, VAO.vaos[Model.getModel(currentModelID).vaoID].length, gl.UNSIGNED_SHORT, 0);
                 } else {
@@ -566,18 +646,22 @@ class EntityRenderer {
             Texture.getTexture(Model.getModel(currentModelID).textureID).disableTexture(gl);
             VAO.vaos[Model.getModel(currentModelID).vaoID].disableVAO(gl);
         });
-        this.program.stop(gl);
+        this.finish(gl);
     }
 }
 class TerrainRenderer {
     program: Program;
     projectionViewTransformationMatrixLocation: WebGLUniformLocation;
+    transformationInverseTransposeMatrixLocation: WebGLUniformLocation;
+    reverseLightDirectionLocation: WebGLUniformLocation;
     textureLocation: WebGLUniformLocation;
     public static async init(gl: WebGL2RenderingContext, programName: string): Promise<TerrainRenderer> {
         return new Promise<TerrainRenderer>(async (resolve) => {
             var terrainRenderer: TerrainRenderer = new TerrainRenderer();
             terrainRenderer.program = await Program.loadProgram(gl, programName);
             terrainRenderer.projectionViewTransformationMatrixLocation = terrainRenderer.program.getUniformLocation(gl, "u_projectionViewTransformationMatrix");
+            terrainRenderer.transformationInverseTransposeMatrixLocation = terrainRenderer.program.getUniformLocation(gl, "u_transformInverseTransposeMatrix");
+            terrainRenderer.reverseLightDirectionLocation = terrainRenderer.program.getUniformLocation(gl, "u_reverseLightDirection");
             terrainRenderer.textureLocation = terrainRenderer.program.getUniformLocation(gl, "u_texture");
             resolve(terrainRenderer);
         });
@@ -585,21 +669,40 @@ class TerrainRenderer {
     public delete(gl: WebGL2RenderingContext): void {
         this.program.delete(gl);
     }
-    public render(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, drawMode: number, terrainTiles: TerrainTile[]): void {
+    private prepare(gl: WebGL2RenderingContext): void {
         gl.enable(WebGL2RenderingContext.DEPTH_TEST);
-        gl.disable(WebGL2RenderingContext.CULL_FACE);
+        gl.enable(WebGL2RenderingContext.CULL_FACE);
         gl.depthFunc(WebGL2RenderingContext.LEQUAL);
+        gl.cullFace(WebGL2RenderingContext.BACK);
         this.program.start(gl);
-        terrainTiles.forEach((currentTerrainTile: TerrainTile) => {
-            VAO.getVAO(currentTerrainTile.vaoID).enableVAO(gl);
-            Texture.getTexture(currentTerrainTile.textureID).activateTexture(gl);
-            //@ts-ignore
-            this.program.loadDataToUniform(gl, this.projectionViewTransformationMatrixLocation, mat4.mul(mat4.create(), projectionViewMatrix, currentTerrainTile.createTransformationMatrix()));
-            gl.drawElements(drawMode, VAO.getVAO(currentTerrainTile.vaoID).length, WebGL2RenderingContext.UNSIGNED_SHORT, 0);
-            Texture.getTexture(currentTerrainTile.textureID).disableTexture(gl);
-            VAO.getVAO(currentTerrainTile.vaoID).disableVAO(gl);
-        });
+    }
+    private finish(gl: WebGL2RenderingContext): void {
         this.program.stop(gl);
+    }
+    private loadDataToUniforms(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, light: Light, currentTile: TerrainTile): void {
+        var currentTransformationMatrix: mat4 = currentTile.createTransformationMatrix();
+        //@ts-ignore
+        var projectionViewTransformationMatrix: mat4 = mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix);
+        //@ts-ignore
+        var transformationInverseMatrix: mat4 = mat4.invert(mat4.create(), currentTransformationMatrix);
+        //@ts-ignore
+        var transformationInverseTransposeMatrix: mat4 = mat4.transpose(mat4.create(), transformationInverseMatrix);
+
+        this.program.loadDataToUniform(gl, this.projectionViewTransformationMatrixLocation, projectionViewTransformationMatrix);
+        this.program.loadDataToUniform(gl, this.transformationInverseTransposeMatrixLocation, transformationInverseTransposeMatrix);
+        this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
+    }
+    public render(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, drawMode: number, light: Light, terrainTiles: TerrainTile[]): void {
+        this.prepare(gl);
+        terrainTiles.forEach((currentTile: TerrainTile) => {
+            VAO.getVAO(currentTile.vaoID).enableVAO(gl);
+            Texture.getTexture(currentTile.textureID).activateTexture(gl);
+            this.loadDataToUniforms(gl, projectionViewMatrix, light, currentTile)
+            gl.drawElements(drawMode, VAO.getVAO(currentTile.vaoID).length, WebGL2RenderingContext.UNSIGNED_SHORT, 0);
+            Texture.getTexture(currentTile.textureID).disableTexture(gl);
+            VAO.getVAO(currentTile.vaoID).disableVAO(gl);
+        });
+        this.finish(gl);
     }
 }
 class MasterRenderer {
@@ -639,7 +742,7 @@ class MasterRenderer {
         camera.updateViewMatrix();
         //@ts-ignore
         var projectionViewMatrix: mat4 = mat4.mul(mat4.create(), this.projectionMatrix, camera.viewMatrix);
-        this.terrainRenderer.render(gl, projectionViewMatrix, this.drawMode, terrainTiles);
+        this.terrainRenderer.render(gl, projectionViewMatrix, this.drawMode, light, terrainTiles);
         this.entityRenderer.render(gl, camera.pos, projectionViewMatrix, this.drawMode, light, entities);
     }
 }
@@ -710,8 +813,9 @@ async function init(): Promise<void> {
     //@ts-ignore
     var sun: Light = new Light(vec3.fromValues(5, 7, 10));
 
-    var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 20, await Texture.loadTexture(gl, "grass.jpg"), 343545454);
-
+    var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 232323);
+    var tile2: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, 0], await Texture.loadTexture(gl, "grass.jpg"), 232323);
+    
     var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
     var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
     var entities: Entity[] = [];
@@ -775,7 +879,7 @@ async function init(): Promise<void> {
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
         updateEntities(entities, deltaTime);
-        renderer.render(gl, camera, sun, entities, [tile]);
+        renderer.render(gl, camera, sun, entities, [tile, tile2]);
         window.requestAnimationFrame(mainLoop);
     }
 }
