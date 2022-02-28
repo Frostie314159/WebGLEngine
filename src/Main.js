@@ -11,36 +11,6 @@ class Program {
     stop(gl) {
         gl.useProgram(null);
     }
-    loadDataToUniform(gl, location, data, forceFloat = false) {
-        if (typeof data === "number") {
-            if (data % 1 === 0 && !forceFloat) {
-                if (data < 0) {
-                    gl.uniform1ui(location, data);
-                }
-                else {
-                    gl.uniform1i(location, data);
-                }
-            }
-            else {
-                gl.uniform1f(location, data);
-            }
-        }
-        else if (typeof data === "boolean") {
-            gl.uniform1i(location, data ? 1 : 0);
-        }
-        else if (data.length === 2) {
-            gl.uniform2fv(location, data);
-        }
-        else if (data.length === 3) {
-            gl.uniform3fv(location, data);
-        }
-        else if (data.length === 4) {
-            gl.uniform4fv(location, data);
-        }
-        else if (data.length === 16) {
-            gl.uniformMatrix4fv(location, false, data);
-        }
-    }
     getUniformLocation(gl, name) {
         return gl.getUniformLocation(this.program, name);
     }
@@ -376,55 +346,63 @@ class Entity {
         return transformationMatrix;
     }
 }
+class PerlinNoiseGenerator {
+    seed;
+    stepSize;
+    static AMPLITUDE = 10;
+    static OCTAVES = 2;
+    static ROUGHNESS = 0.3;
+    constructor(seed, stepSize) {
+        this.seed = seed;
+        this.stepSize = stepSize;
+    }
+    getInterpolatedNoise(x, z) {
+        const intX = Math.floor(x);
+        const intZ = Math.floor(z);
+        const fracX = x - intX;
+        const fracZ = z - intZ;
+        const v1 = this.getSmoothNoise(intX, intZ);
+        const v2 = this.getSmoothNoise(intX + 1, intZ);
+        const v3 = this.getSmoothNoise(intX, intZ + 1);
+        const v4 = this.getSmoothNoise(intX + 1, intZ + 1);
+        const i1 = this.interpolate(v1, v2, fracX);
+        const i2 = this.interpolate(v3, v4, fracX);
+        return this.interpolate(i1, i2, fracZ);
+    }
+    interpolate(a, b, blend) {
+        const theta = blend * Math.PI;
+        const f = (1 - Math.cos(theta)) * 0.5;
+        return a * (1 - f) + b * f;
+    }
+    getSmoothNoise(x, z) {
+        const corners = (this.getNoise(x - 1, z - 1) + this.getNoise(x - 1, z + 1) + this.getNoise(x + 1, z - 1) + this.getNoise(x + 1, z + 1)) / 16;
+        const sides = (this.getNoise(x - 1, z) + this.getNoise(x, z + 1) + this.getNoise(x + 1, z) + this.getNoise(x, z - 1)) / 8;
+        const middle = this.getNoise(x, z) / 4;
+        return corners + sides + middle;
+    }
+    getHeight(x, z) {
+        var total = 0;
+        const d = Math.pow(2, PerlinNoiseGenerator.OCTAVES - 1);
+        for (let i = 0; i < PerlinNoiseGenerator.OCTAVES; i++) {
+            const freq = Math.pow(2, i) / d;
+            const amp = Math.pow(PerlinNoiseGenerator.ROUGHNESS, i) * PerlinNoiseGenerator.AMPLITUDE;
+            total += this.getInterpolatedNoise(x * freq, z * freq) * amp;
+        }
+        return total;
+    }
+    getNoise(x, z) {
+        //@ts-ignore
+        return (new Math.seedrandom(Math.ceil(x * 123123 + z * 324234 + this.seed)))() * 2 - 1;
+    }
+}
 class TerrainTile {
     vaoID;
     textureID;
     pos;
     static TILE_SIZE = 25;
-    static AMPLITUDE = 10;
-    static OCTAVES = 2;
-    static ROUGHNESS = 0.3;
     createTransformationMatrix() {
         //@ts-ignore
         return mat4.translate(mat4.create(), mat4.create(), vec3.negate(vec3.create(), this.pos));
-    }
-    static getInterpolatedNoise(seed, x, z) {
-        const intX = Math.floor(x);
-        const intZ = Math.floor(z);
-        const fracX = x - intX;
-        const fracZ = z - intZ;
-        const v1 = TerrainTile.getSmoothNoise(seed, intX, intZ);
-        const v2 = TerrainTile.getSmoothNoise(seed, intX + 1, intZ);
-        const v3 = TerrainTile.getSmoothNoise(seed, intX, intZ + 1);
-        const v4 = TerrainTile.getSmoothNoise(seed, intX + 1, intZ + 1);
-        const i1 = TerrainTile.interpolate(v1, v2, fracX);
-        const i2 = TerrainTile.interpolate(v3, v4, fracX);
-        return TerrainTile.interpolate(i1, i2, fracZ);
-    }
-    static interpolate(a, b, blend) {
-        const theta = blend * Math.PI;
-        const f = (1 - Math.cos(theta)) * 0.5;
-        return a * (1 - f) + b * f;
-    }
-    static getSmoothNoise(seed, x, z) {
-        const corners = (TerrainTile.getNoise(seed, x - 1, z - 1) + TerrainTile.getNoise(seed, x - 1, z + 1) + TerrainTile.getNoise(seed, x + 1, z - 1) + TerrainTile.getNoise(seed, x + 1, z + 1)) / 16;
-        const sides = (TerrainTile.getNoise(seed, x - 1, z) + TerrainTile.getNoise(seed, x, z + 1) + TerrainTile.getNoise(seed, x + 1, z) + TerrainTile.getNoise(seed, x, z - 1)) / 8;
-        const middle = TerrainTile.getNoise(seed, x, z) / 4;
-        return corners + sides + middle;
-    }
-    static getHeight(seed, x, z) {
-        var total = 0;
-        const d = Math.pow(2, TerrainTile.OCTAVES - 1);
-        for (let i = 0; i < TerrainTile.OCTAVES; i++) {
-            const freq = Math.pow(2, i) / d;
-            const amp = Math.pow(TerrainTile.ROUGHNESS, i) * TerrainTile.AMPLITUDE;
-            total += TerrainTile.getInterpolatedNoise(seed, x * freq, z * freq) * amp;
-        }
-        return total;
-    }
-    static getNoise(seed, x, z) {
-        //@ts-ignore
-        return (new Math.seedrandom(Math.ceil(x * 123123 + z * 324234 + seed)))() * 2 - 1;
     }
     static async generateTerrainTile(gl, program, resolution, pos, textureID, seed) {
         return new Promise(async (resolve) => {
@@ -437,12 +415,13 @@ class TerrainTile {
             var textureCords = new Float32Array(VERTEX_COUNT * 2);
             var indices = new Uint16Array(QUADS_PER_ROW * resolution * 3);
             let STEP_SIZE = TerrainTile.TILE_SIZE / resolution;
+            var perlinNoiseGenerator = new PerlinNoiseGenerator(seed, STEP_SIZE);
             for (let Z = 0; Z < VERTICES_PER_ROW; Z++) {
                 for (let X = 0; X < VERTICES_PER_ROW; X++) {
                     let INDEX = Z + X * VERTICES_PER_ROW;
                     vertices[INDEX * 3] = (X * 2 - 1) * STEP_SIZE;
+                    vertices[INDEX * 3 + 1] = perlinNoiseGenerator.getHeight((X) * STEP_SIZE, (Z) * STEP_SIZE);
                     vertices[INDEX * 3 + 2] = (Z * 2 - 1) * STEP_SIZE;
-                    vertices[INDEX * 3 + 1] = TerrainTile.getHeight(seed, (X - pos[0]) * STEP_SIZE, (Z - pos[2]) * STEP_SIZE);
                     textureCords[INDEX * 2] = Z * STEP_SIZE;
                     textureCords[INDEX * 2 + 1] = X * STEP_SIZE;
                 }
@@ -455,50 +434,50 @@ class TerrainTile {
                     let heightD;
                     let heightU;
                     if (X == 0 && Z == 0) {
-                        heightL = TerrainTile.getHeight(seed, (X - 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightL = perlinNoiseGenerator.getHeight((X - 1) * STEP_SIZE, Z * STEP_SIZE);
                         heightR = vertices[(INDEX + 1) * 3 + 1];
                         heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
-                        heightU = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z + 1) * STEP_SIZE);
+                        heightU = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z + 1) * STEP_SIZE);
                     }
                     else if (X == 0 && Z == resolution) {
                         heightL = vertices[(INDEX - 1) * 3 + 1];
-                        heightR = TerrainTile.getHeight(seed, (X + 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightR = perlinNoiseGenerator.getHeight((X + 1) * STEP_SIZE, Z * STEP_SIZE);
                         heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
-                        heightU = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z + 1) * STEP_SIZE);
+                        heightU = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z + 1) * STEP_SIZE);
                     }
                     else if (X == resolution && Z == 0) {
-                        heightL = TerrainTile.getHeight(seed, (X - 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightL = perlinNoiseGenerator.getHeight((X - 1) * STEP_SIZE, Z * STEP_SIZE);
                         heightR = vertices[(INDEX + 1) * 3 + 1];
-                        heightD = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z - 1) * STEP_SIZE);
+                        heightD = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z - 1) * STEP_SIZE);
                         heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
                     }
                     else if (X == resolution && Z == resolution) {
                         heightL = vertices[(INDEX - 1) * 3 + 1];
-                        heightR = TerrainTile.getHeight(seed, (X + 1) * STEP_SIZE, Z * STEP_SIZE);
-                        heightD = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z - 1) * STEP_SIZE);
+                        heightR = perlinNoiseGenerator.getHeight((X + 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightD = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z - 1) * STEP_SIZE);
                         heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
                     }
                     else if (X == 0) {
                         heightL = vertices[(INDEX - 1) * 3 + 1];
                         heightR = vertices[(INDEX + 1) * 3 + 1];
                         heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
-                        heightU = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z + 1) * STEP_SIZE);
+                        heightU = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z + 1) * STEP_SIZE);
                     }
                     else if (X == resolution) {
                         heightL = vertices[(INDEX - 1) * 3 + 1];
                         heightR = vertices[(INDEX + 1) * 3 + 1];
-                        heightD = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z - 1) * STEP_SIZE);
+                        heightD = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z - 1) * STEP_SIZE);
                         heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
                     }
                     else if (Z == 0) {
-                        heightL = TerrainTile.getHeight(seed, (X - 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightL = perlinNoiseGenerator.getHeight((X - 1) * STEP_SIZE, Z * STEP_SIZE);
                         heightR = vertices[(INDEX + 1) * 3 + 1];
                         heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
                         heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
                     }
                     else if (Z == resolution) {
                         heightL = vertices[(INDEX - 1) * 3 + 1];
-                        heightR = TerrainTile.getHeight(seed, (X + 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightR = perlinNoiseGenerator.getHeight((X + 1) * STEP_SIZE, Z * STEP_SIZE);
                         heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
                         heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
                     }
@@ -612,11 +591,9 @@ class EntityRenderer {
         var projectionViewTransformationMatrix = mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix);
         //@ts-ignore
         var transformationInverseMatrix = mat4.invert(mat4.create(), currentTransformationMatrix);
-        //@ts-ignore
-        var transformationInverseTransposeMatrix = mat4.transpose(mat4.create(), transformationInverseMatrix);
-        this.program.loadDataToUniform(gl, this.projectionViewTransformationMatrixLocation, projectionViewTransformationMatrix);
-        this.program.loadDataToUniform(gl, this.transformationInverseTransposeMatrixLocation, transformationInverseTransposeMatrix);
-        this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
+        gl.uniformMatrix4fv(this.projectionViewTransformationMatrixLocation, false, projectionViewTransformationMatrix);
+        gl.uniformMatrix4fv(this.transformationInverseTransposeMatrixLocation, true, transformationInverseMatrix);
+        gl.uniform3fv(this.reverseLightDirectionLocation, light.dir);
     }
     render(gl, cameraPos, projectionViewMatrix, drawMode, light, entities) {
         this.prepare(gl, entities);
@@ -685,11 +662,9 @@ class TerrainRenderer {
         var projectionViewTransformationMatrix = mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix);
         //@ts-ignore
         var transformationInverseMatrix = mat4.invert(mat4.create(), currentTransformationMatrix);
-        //@ts-ignore
-        var transformationInverseTransposeMatrix = mat4.transpose(mat4.create(), transformationInverseMatrix);
-        this.program.loadDataToUniform(gl, this.projectionViewTransformationMatrixLocation, projectionViewTransformationMatrix);
-        this.program.loadDataToUniform(gl, this.transformationInverseTransposeMatrixLocation, transformationInverseTransposeMatrix);
-        this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
+        gl.uniformMatrix4fv(this.projectionViewTransformationMatrixLocation, false, projectionViewTransformationMatrix);
+        gl.uniformMatrix4fv(this.transformationInverseTransposeMatrixLocation, true, transformationInverseMatrix);
+        gl.uniform3fv(this.reverseLightDirectionLocation, light.dir);
     }
     render(gl, projectionViewMatrix, drawMode, light, terrainTiles) {
         this.prepare(gl);
@@ -810,7 +785,6 @@ async function init() {
     //@ts-ignore
     var sun = new Light(vec3.fromValues(5, 7, 10));
     var tile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 232323);
-    var tile2 = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, 0], await Texture.loadTexture(gl, "grass.jpg"), 232323);
     var entity = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
     var entity2 = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
     var entities = [];
@@ -876,7 +850,7 @@ async function init() {
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
         updateEntities(entities, deltaTime);
-        renderer.render(gl, camera, sun, entities, [tile, tile2]);
+        renderer.render(gl, camera, sun, entities, [tile]);
         window.requestAnimationFrame(mainLoop);
     }
 }

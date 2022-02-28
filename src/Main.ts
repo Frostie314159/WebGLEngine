@@ -12,29 +12,6 @@ class Program {
     public stop(gl: WebGL2RenderingContext): void {
         gl.useProgram(null);
     }
-    public loadDataToUniform(gl: WebGL2RenderingContext, location: WebGLUniformLocation, data: number | boolean | vec2 | vec3 | vec4 | mat4, forceFloat = false): void {
-        if (typeof data === "number") {
-            if (data % 1 === 0 && !forceFloat) {
-                if (data < 0) {
-                    gl.uniform1ui(location, data);
-                } else {
-                    gl.uniform1i(location, data);
-                }
-            } else {
-                gl.uniform1f(location, data);
-            }
-        } else if (typeof data === "boolean") {
-            gl.uniform1i(location, data ? 1 : 0);
-        } else if (data.length === 2) {
-            gl.uniform2fv(location, data);
-        } else if (data.length === 3) {
-            gl.uniform3fv(location, data);
-        } else if (data.length === 4) {
-            gl.uniform4fv(location, data);
-        } else if (data.length === 16) {
-            gl.uniformMatrix4fv(location, false, data);
-        }
-    }
     public getUniformLocation(gl: WebGL2RenderingContext, name: string): WebGLUniformLocation {
         return gl.getUniformLocation(this.program, name);
     }
@@ -372,57 +349,65 @@ class Entity {
         return transformationMatrix;
     }
 }
-class TerrainTile {
-    vaoID: number;
-    textureID: number;
-    pos: vec3;
-    public static TILE_SIZE: number = 25;
+class PerlinNoiseGenerator{
+    seed:number;
+    stepSize:number;
     private static AMPLITUDE: number = 10;
     private static OCTAVES: number = 2;
     private static ROUGHNESS: number = 0.3;
-    public createTransformationMatrix(): mat4 {
-        //@ts-ignore
-        return mat4.translate(mat4.create(), mat4.create(), vec3.negate(vec3.create(), this.pos));
+    constructor(seed: number, stepSize: number){
+        this.seed = seed;
+        this.stepSize = stepSize;
     }
-    private static getInterpolatedNoise(seed: number, x: number, z: number): number {
+    private getInterpolatedNoise(x: number, z: number): number {
         const intX: number = Math.floor(x);
         const intZ: number = Math.floor(z);
         const fracX: number = x - intX;
         const fracZ: number = z - intZ;
 
-        const v1: number = TerrainTile.getSmoothNoise(seed, intX, intZ);
-        const v2: number = TerrainTile.getSmoothNoise(seed, intX + 1, intZ);
-        const v3: number = TerrainTile.getSmoothNoise(seed, intX, intZ + 1);
-        const v4: number = TerrainTile.getSmoothNoise(seed, intX + 1, intZ + 1);
+        const v1: number = this.getSmoothNoise(intX, intZ);
+        const v2: number = this.getSmoothNoise(intX + 1, intZ);
+        const v3: number = this.getSmoothNoise(intX, intZ + 1);
+        const v4: number = this.getSmoothNoise(intX + 1, intZ + 1);
 
-        const i1: number = TerrainTile.interpolate(v1, v2, fracX);
-        const i2: number = TerrainTile.interpolate(v3, v4, fracX);
-        return TerrainTile.interpolate(i1, i2, fracZ);
+        const i1: number = this.interpolate(v1, v2, fracX);
+        const i2: number = this.interpolate(v3, v4, fracX);
+        return this.interpolate(i1, i2, fracZ);
     }
-    private static interpolate(a: number, b: number, blend: number): number {
+    private interpolate(a: number, b: number, blend: number): number {
         const theta: number = blend * Math.PI;
         const f: number = (1 - Math.cos(theta)) * 0.5;
         return a * (1 - f) + b * f;
     }
-    private static getSmoothNoise(seed: number, x: number, z: number): number {
-        const corners: number = (TerrainTile.getNoise(seed, x - 1, z - 1) + TerrainTile.getNoise(seed, x - 1, z + 1) + TerrainTile.getNoise(seed, x + 1, z - 1) + TerrainTile.getNoise(seed, x + 1, z + 1)) / 16;
-        const sides: number = (TerrainTile.getNoise(seed, x - 1, z) + TerrainTile.getNoise(seed, x, z + 1) + TerrainTile.getNoise(seed, x + 1, z) + TerrainTile.getNoise(seed, x, z - 1)) / 8;
-        const middle: number = TerrainTile.getNoise(seed, x, z) / 4;
+    private getSmoothNoise(x: number, z: number): number {
+        const corners: number = (this.getNoise(x - 1, z - 1) + this.getNoise(x - 1, z + 1) + this.getNoise(x + 1, z - 1) + this.getNoise(x + 1, z + 1)) / 16;
+        const sides: number = (this.getNoise(x - 1, z) + this.getNoise(x, z + 1) + this.getNoise(x + 1, z) + this.getNoise(x, z - 1)) / 8;
+        const middle: number = this.getNoise(x, z) / 4;
         return corners + sides + middle;
     }
-    private static getHeight(seed: number, x: number, z: number): number {
+    public getHeight(x: number, z: number): number {
         var total: number = 0;
-        const d: number = Math.pow(2, TerrainTile.OCTAVES - 1);
-        for (let i = 0; i < TerrainTile.OCTAVES; i++) {
+        const d: number = Math.pow(2, PerlinNoiseGenerator.OCTAVES - 1);
+        for (let i = 0; i < PerlinNoiseGenerator.OCTAVES; i++) {
             const freq: number = Math.pow(2, i) / d;
-            const amp: number = Math.pow(TerrainTile.ROUGHNESS, i) * TerrainTile.AMPLITUDE;
-            total += TerrainTile.getInterpolatedNoise(seed, x * freq, z * freq) * amp;
+            const amp: number = Math.pow(PerlinNoiseGenerator.ROUGHNESS, i) * PerlinNoiseGenerator.AMPLITUDE;
+            total += this.getInterpolatedNoise(x * freq, z * freq) * amp;
         }
         return total;
     }
-    private static getNoise(seed: number, x: number, z: number): number {
+    private getNoise(x: number, z: number): number {
         //@ts-ignore
-        return (new Math.seedrandom(Math.ceil(x * 123123 + z * 324234 + seed)))() * 2 - 1;
+        return (new Math.seedrandom(Math.ceil(x * 123123 + z * 324234 + this.seed)))() * 2 - 1;
+    }
+}
+class TerrainTile {
+    vaoID: number;
+    textureID: number;
+    pos: vec3;
+    public static TILE_SIZE: number = 25;
+    public createTransformationMatrix(): mat4 {
+        //@ts-ignore
+        return mat4.translate(mat4.create(), mat4.create(), vec3.negate(vec3.create(), this.pos));
     }
     public static async generateTerrainTile(gl: WebGL2RenderingContext, program: Program, resolution: number, pos: vec3, textureID: number, seed: number): Promise<TerrainTile> {
         return new Promise<TerrainTile>(async (resolve) => {
@@ -438,12 +423,14 @@ class TerrainTile {
             var indices: Uint16Array = new Uint16Array(QUADS_PER_ROW * resolution * 3);
 
             let STEP_SIZE: number = TerrainTile.TILE_SIZE / resolution;
+
+            var perlinNoiseGenerator: PerlinNoiseGenerator = new PerlinNoiseGenerator(seed, STEP_SIZE);
             for (let Z = 0; Z < VERTICES_PER_ROW; Z++) {
                 for (let X = 0; X < VERTICES_PER_ROW; X++) {
                     let INDEX: number = Z + X * VERTICES_PER_ROW;
                     vertices[INDEX * 3] = (X * 2 - 1) * STEP_SIZE;
+                    vertices[INDEX * 3 + 1] = perlinNoiseGenerator.getHeight((X) * STEP_SIZE, (Z) * STEP_SIZE);
                     vertices[INDEX * 3 + 2] = (Z * 2 - 1) * STEP_SIZE;
-                    vertices[INDEX * 3 + 1] = TerrainTile.getHeight(seed, (X) * STEP_SIZE, (Z) * STEP_SIZE);
 
                     textureCords[INDEX * 2] = Z * STEP_SIZE;
                     textureCords[INDEX * 2 + 1] = X * STEP_SIZE;
@@ -457,43 +444,43 @@ class TerrainTile {
                     let heightD: number;
                     let heightU: number;
                     if (X == 0 && Z == 0) {
-                        heightL = TerrainTile.getHeight(seed, (X - 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightL = perlinNoiseGenerator.getHeight((X - 1) * STEP_SIZE, Z * STEP_SIZE);
                         heightR = vertices[(INDEX + 1) * 3 + 1];
                         heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
-                        heightU = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z + 1) * STEP_SIZE);
+                        heightU = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z + 1) * STEP_SIZE);
                     } else if (X == 0 && Z == resolution) {
                         heightL = vertices[(INDEX - 1) * 3 + 1];
-                        heightR = TerrainTile.getHeight(seed, (X + 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightR = perlinNoiseGenerator.getHeight((X + 1) * STEP_SIZE, Z * STEP_SIZE);
                         heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
-                        heightU = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z + 1) * STEP_SIZE);
+                        heightU = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z + 1) * STEP_SIZE);
                     } else if (X == resolution && Z == 0) {
-                        heightL = TerrainTile.getHeight(seed, (X - 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightL = perlinNoiseGenerator.getHeight((X - 1) * STEP_SIZE, Z * STEP_SIZE);
                         heightR = vertices[(INDEX + 1) * 3 + 1];
-                        heightD = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z - 1) * STEP_SIZE);
+                        heightD = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z - 1) * STEP_SIZE);
                         heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
                     } else if (X == resolution && Z == resolution) {
                         heightL = vertices[(INDEX - 1) * 3 + 1];
-                        heightR = TerrainTile.getHeight(seed, (X + 1) * STEP_SIZE, Z * STEP_SIZE);
-                        heightD = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z - 1) * STEP_SIZE);
+                        heightR = perlinNoiseGenerator.getHeight((X + 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightD = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z - 1) * STEP_SIZE);
                         heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
                     } else if (X == 0) {
                         heightL = vertices[(INDEX - 1) * 3 + 1];
                         heightR = vertices[(INDEX + 1) * 3 + 1];
                         heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
-                        heightU = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z + 1) * STEP_SIZE);
+                        heightU = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z + 1) * STEP_SIZE);
                     } else if (X == resolution) {
                         heightL = vertices[(INDEX - 1) * 3 + 1];
                         heightR = vertices[(INDEX + 1) * 3 + 1];
-                        heightD = TerrainTile.getHeight(seed, X * STEP_SIZE, (Z - 1) * STEP_SIZE);
+                        heightD = perlinNoiseGenerator.getHeight(X * STEP_SIZE, (Z - 1) * STEP_SIZE);
                         heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
                     } else if (Z == 0) {
-                        heightL = TerrainTile.getHeight(seed, (X - 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightL = perlinNoiseGenerator.getHeight((X - 1) * STEP_SIZE, Z * STEP_SIZE);
                         heightR = vertices[(INDEX + 1) * 3 + 1];
                         heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
                         heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
                     } else if (Z == resolution) {
                         heightL = vertices[(INDEX - 1) * 3 + 1];
-                        heightR = TerrainTile.getHeight(seed, (X + 1) * STEP_SIZE, Z * STEP_SIZE);
+                        heightR = perlinNoiseGenerator.getHeight((X + 1) * STEP_SIZE, Z * STEP_SIZE);
                         heightD = vertices[(INDEX + VERTICES_PER_ROW) * 3 + 1];
                         heightU = vertices[(INDEX - VERTICES_PER_ROW) * 3 + 1];
                     } else {
@@ -612,12 +599,10 @@ class EntityRenderer {
         var projectionViewTransformationMatrix: mat4 = mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix);
         //@ts-ignore
         var transformationInverseMatrix: mat4 = mat4.invert(mat4.create(), currentTransformationMatrix);
-        //@ts-ignore
-        var transformationInverseTransposeMatrix: mat4 = mat4.transpose(mat4.create(), transformationInverseMatrix);
 
-        this.program.loadDataToUniform(gl, this.projectionViewTransformationMatrixLocation, projectionViewTransformationMatrix);
-        this.program.loadDataToUniform(gl, this.transformationInverseTransposeMatrixLocation, transformationInverseTransposeMatrix);
-        this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
+        gl.uniformMatrix4fv(this.projectionViewTransformationMatrixLocation, false, projectionViewTransformationMatrix);
+        gl.uniformMatrix4fv(this.transformationInverseTransposeMatrixLocation, true, transformationInverseMatrix);
+        gl.uniform3fv(this.reverseLightDirectionLocation, light.dir);
     }
     public render(gl: WebGL2RenderingContext, cameraPos: vec3, projectionViewMatrix: mat4, drawMode: number, light: Light, entities: Entity[]): void {
         this.prepare(gl, entities);
@@ -685,12 +670,10 @@ class TerrainRenderer {
         var projectionViewTransformationMatrix: mat4 = mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix);
         //@ts-ignore
         var transformationInverseMatrix: mat4 = mat4.invert(mat4.create(), currentTransformationMatrix);
-        //@ts-ignore
-        var transformationInverseTransposeMatrix: mat4 = mat4.transpose(mat4.create(), transformationInverseMatrix);
 
-        this.program.loadDataToUniform(gl, this.projectionViewTransformationMatrixLocation, projectionViewTransformationMatrix);
-        this.program.loadDataToUniform(gl, this.transformationInverseTransposeMatrixLocation, transformationInverseTransposeMatrix);
-        this.program.loadDataToUniform(gl, this.reverseLightDirectionLocation, light.dir);
+        gl.uniformMatrix4fv(this.projectionViewTransformationMatrixLocation, false, projectionViewTransformationMatrix);
+        gl.uniformMatrix4fv(this.transformationInverseTransposeMatrixLocation, true, transformationInverseMatrix);
+        gl.uniform3fv(this.reverseLightDirectionLocation, light.dir);
     }
     public render(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, drawMode: number, light: Light, terrainTiles: TerrainTile[]): void {
         this.prepare(gl);
@@ -814,7 +797,6 @@ async function init(): Promise<void> {
     var sun: Light = new Light(vec3.fromValues(5, 7, 10));
 
     var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 232323);
-    var tile2: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, 0], await Texture.loadTexture(gl, "grass.jpg"), 232323);
     
     var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
     var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
@@ -879,7 +861,7 @@ async function init(): Promise<void> {
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
         updateEntities(entities, deltaTime);
-        renderer.render(gl, camera, sun, entities, [tile, tile2]);
+        renderer.render(gl, camera, sun, entities, [tile]);
         window.requestAnimationFrame(mainLoop);
     }
 }
