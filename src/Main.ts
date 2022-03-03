@@ -1,6 +1,6 @@
 //@ts-ignore
 import type { vec2, vec3, vec4, mat2, mat3, mat4, glMatrix, quat } from "gl-matrix";
-import type { seedrandom } from "./node_modules/seedrandom/seedrandom.min.js";
+import init, {generate_terrain_mesh, get_range_from_array} from "../perlin-noise/pkg/perlin_noise.js";
 //@ts-ignore
 const { vec2, vec3, vec4, mat2, mat3, mat4 } = glMatrix;
 class Program {
@@ -352,7 +352,7 @@ class Entity {
 class PerlinNoiseGenerator{
     seed:number;
     stepSize:number;
-    private static AMPLITUDE: number = 10;
+     private static AMPLITUDE: number = 7;
     private static OCTAVES: number = 2;
     private static ROUGHNESS: number = 0.3;
     constructor(seed: number, stepSize: number){
@@ -404,22 +404,32 @@ class TerrainTile {
     vaoID: number;
     textureID: number;
     pos: vec3;
-    public static TILE_SIZE: number = 25;
+    public static TILE_SIZE: number = 1;
     public createTransformationMatrix(): mat4 {
         //@ts-ignore
         return mat4.translate(mat4.create(), mat4.create(), vec3.negate(vec3.create(), this.pos));
     }
     public static async generateTerrainTile(gl: WebGL2RenderingContext, program: Program, resolution: number, pos: vec3, textureID: number, seed: number): Promise<TerrainTile> {
         return new Promise<TerrainTile>(async (resolve) => {
+            /*
+            await init();
+            let data: Float32Array = generate_terrain_mesh(resolution, TerrainTile.TILE_SIZE);
+            const VERTEX_COUNT =  Math.pow(resolution + 1, 2);
+            const INDEX_COUNT = Math.pow(resolution, 2) * 6;
+            var vertices = get_range_from_array(data, 0, VERTEX_COUNT * 3);
+            var normals = get_range_from_array(data, VERTEX_COUNT * 3, VERTEX_COUNT * 6);
+            var texCords = get_range_from_array(data, VERTEX_COUNT * 6, VERTEX_COUNT * 8);
+            var indices = get_range_from_array(data, VERTEX_COUNT * 8, VERTEX_COUNT * 8 + INDEX_COUNT);
+            */
             var terrainTile: TerrainTile = new TerrainTile();
-
+            
             let VERTICES_PER_ROW: number = resolution + 1;
             let VERTEX_COUNT: number = Math.pow(VERTICES_PER_ROW, 2);
             let QUADS_PER_ROW: number = resolution * 2;
 
             var vertices: Float32Array = new Float32Array(VERTEX_COUNT * 3);
             var normals: Float32Array = new Float32Array(VERTEX_COUNT * 3);
-            var textureCords: Float32Array = new Float32Array(VERTEX_COUNT * 2);
+            var texCords: Float32Array = new Float32Array(VERTEX_COUNT * 2);
             var indices: Uint16Array = new Uint16Array(QUADS_PER_ROW * resolution * 3);
 
             let STEP_SIZE: number = TerrainTile.TILE_SIZE / resolution;
@@ -432,8 +442,8 @@ class TerrainTile {
                     vertices[INDEX * 3 + 1] = perlinNoiseGenerator.getHeight((X) * STEP_SIZE, (Z) * STEP_SIZE);
                     vertices[INDEX * 3 + 2] = (Z * 2 - 1) * STEP_SIZE;
 
-                    textureCords[INDEX * 2] = Z * STEP_SIZE;
-                    textureCords[INDEX * 2 + 1] = X * STEP_SIZE;
+                    texCords[INDEX * 2] = Z * STEP_SIZE;
+                    texCords[INDEX * 2 + 1] = X * STEP_SIZE;
                 }
             }
             for (let X = 0; X < VERTICES_PER_ROW; X++) {
@@ -515,7 +525,7 @@ class TerrainTile {
             terrainTile.vaoID = await VAO.loadVAOFromArray(gl, true,
                 new VBOData(gl, vertices, program, "in_pos", 3, WebGL2RenderingContext.FLOAT),
                 new VBOData(gl, normals, program, "in_normal", 3, WebGL2RenderingContext.FLOAT),
-                new VBOData(gl, textureCords, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, texCords, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT),
                 new VBOData(gl, indices, program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
             );
             terrainTile.textureID = textureID;
@@ -785,7 +795,7 @@ async function updateEntities(entities: Entity[], deltaTime: number): Promise<vo
         currentEntity.update(deltaTime);
     });
 }
-async function init(): Promise<void> {
+async function main(): Promise<void> {
     var gl: WebGL2RenderingContext = await createContext();
 
     var renderer: MasterRenderer = await MasterRenderer.init(gl);
@@ -796,7 +806,7 @@ async function init(): Promise<void> {
     //@ts-ignore
     var sun: Light = new Light(vec3.fromValues(5, 7, 10));
 
-    var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 232323);
+    var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 1, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 232323);
     
     var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
     var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
@@ -865,3 +875,4 @@ async function init(): Promise<void> {
         window.requestAnimationFrame(mainLoop);
     }
 }
+document.body.onload = main;
