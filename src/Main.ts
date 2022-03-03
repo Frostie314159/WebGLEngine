@@ -796,7 +796,7 @@ async function init(): Promise<void> {
     //@ts-ignore
     var sun: Light = new Light(vec3.fromValues(5, 7, 10));
 
-    var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 232323);
+    var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 3157);
     
     var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
     var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
@@ -865,3 +865,4 @@ async function init(): Promise<void> {
         window.requestAnimationFrame(mainLoop);
     }
 }
+document.body.onload = init;

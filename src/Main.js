@@ -1,5 +1,3 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
 //@ts-ignore
 const { vec2, vec3, vec4, mat2, mat3, mat4 } = glMatrix;
 class Program {
@@ -784,7 +782,7 @@ async function init() {
     var camera = new Camera(vec3.fromValues(0, -1, 0), vec3.fromValues(0, 0, 0));
     //@ts-ignore
     var sun = new Light(vec3.fromValues(5, 7, 10));
-    var tile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 232323);
+    var tile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 3157);
     var entity = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
     var entity2 = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
     var entities = [];
@@ -854,3 +852,5 @@ async function init() {
         window.requestAnimationFrame(mainLoop);
     }
 }
+document.body.onload = init;
+export {};
