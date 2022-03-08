@@ -171,7 +171,7 @@ class VAO {
                 indices.push(currentVertexPointer);
                 let currentTexCord: vec2 = textureCords[Number.parseInt(vertex[1]) - 1];
                 textureCordArray[currentVertexPointer * 2] = currentTexCord[0];
-                textureCordArray[currentVertexPointer * 2 + 1] = 1 - currentTexCord[1];
+                textureCordArray[currentVertexPointer * 2 + 1] = currentTexCord[1];
                 let currentNormal: vec3 = normals[Number.parseInt(vertex[2]) - 1];
                 normalArray[currentVertexPointer * 3] = currentNormal[0];
                 normalArray[currentVertexPointer * 3 + 1] = currentNormal[1];
@@ -722,7 +722,7 @@ class MasterRenderer {
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     }
     public static clear(gl: WebGL2RenderingContext): void {
-        gl.clearColor(0, 0, 0, 0);
+        gl.clearColor(1, 1, 1, 1);
         gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
     }
     public updateProjectionMatrix(gl: WebGL2RenderingContext): void {
@@ -779,7 +779,6 @@ async function createContext(): Promise<WebGL2RenderingContext> {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
         canvas.id = "webgl_canvas";
-        canvas.style.background = "black";
         document.body.appendChild(canvas);
         let gl: WebGL2RenderingContext = canvas.getContext("webgl2");
         if (gl) {
@@ -809,7 +808,7 @@ async function main(): Promise<void> {
     var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 1, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 232323);
     
     var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
-    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
+    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "screen");
     var entities: Entity[] = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
     entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));
