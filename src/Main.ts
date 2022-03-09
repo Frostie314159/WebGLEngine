@@ -171,7 +171,7 @@ class VAO {
                 indices.push(currentVertexPointer);
                 let currentTexCord: vec2 = textureCords[Number.parseInt(vertex[1]) - 1];
                 textureCordArray[currentVertexPointer * 2] = currentTexCord[0];
-                textureCordArray[currentVertexPointer * 2 + 1] = 1 - currentTexCord[1];
+                textureCordArray[currentVertexPointer * 2 + 1] = currentTexCord[1];
                 let currentNormal: vec3 = normals[Number.parseInt(vertex[2]) - 1];
                 normalArray[currentVertexPointer * 3] = currentNormal[0];
                 normalArray[currentVertexPointer * 3 + 1] = currentNormal[1];
@@ -352,7 +352,7 @@ class Entity {
 class PerlinNoiseGenerator{
     seed:number;
     stepSize:number;
-    private static AMPLITUDE: number = 10;
+     private static AMPLITUDE: number = 7;
     private static OCTAVES: number = 2;
     private static ROUGHNESS: number = 0.3;
     constructor(seed: number, stepSize: number){
@@ -411,6 +411,16 @@ class TerrainTile {
     }
     public static async generateTerrainTile(gl: WebGL2RenderingContext, program: Program, resolution: number, pos: vec3, textureID: number, seed: number): Promise<TerrainTile> {
         return new Promise<TerrainTile>(async (resolve) => {
+            /*
+            await init();
+            let data: Float32Array = generate_terrain_mesh(resolution, TerrainTile.TILE_SIZE);
+            const VERTEX_COUNT =  Math.pow(resolution + 1, 2);
+            const INDEX_COUNT = Math.pow(resolution, 2) * 6;
+            var vertices = get_range_from_array(data, 0, VERTEX_COUNT * 3);
+            var normals = get_range_from_array(data, VERTEX_COUNT * 3, VERTEX_COUNT * 6);
+            var texCords = get_range_from_array(data, VERTEX_COUNT * 6, VERTEX_COUNT * 8);
+            var indices = get_range_from_array(data, VERTEX_COUNT * 8, VERTEX_COUNT * 8 + INDEX_COUNT);
+            */
             var terrainTile: TerrainTile = new TerrainTile();
             /*
             await init();
@@ -428,7 +438,7 @@ class TerrainTile {
 
             var vertices: Float32Array = new Float32Array(VERTEX_COUNT * 3);
             var normals: Float32Array = new Float32Array(VERTEX_COUNT * 3);
-            var textureCords: Float32Array = new Float32Array(VERTEX_COUNT * 2);
+            var texCords: Float32Array = new Float32Array(VERTEX_COUNT * 2);
             var indices: Uint16Array = new Uint16Array(QUADS_PER_ROW * resolution * 3);
 
             let STEP_SIZE: number = TerrainTile.TILE_SIZE / resolution;
@@ -441,8 +451,8 @@ class TerrainTile {
                     vertices[INDEX * 3 + 1] = perlinNoiseGenerator.getHeight((X) * STEP_SIZE, (Z) * STEP_SIZE);
                     vertices[INDEX * 3 + 2] = (Z * 2 - 1) * STEP_SIZE;
 
-                    textureCords[INDEX * 2] = Z * STEP_SIZE;
-                    textureCords[INDEX * 2 + 1] = X * STEP_SIZE;
+                    texCords[INDEX * 2] = Z * STEP_SIZE;
+                    texCords[INDEX * 2 + 1] = X * STEP_SIZE;
                 }
             }
             for (let X = 0; X < VERTICES_PER_ROW; X++) {
@@ -524,7 +534,7 @@ class TerrainTile {
             terrainTile.vaoID = await VAO.loadVAOFromArray(gl, true,
                 new VBOData(gl, vertices, program, "in_pos", 3, WebGL2RenderingContext.FLOAT),
                 new VBOData(gl, normals, program, "in_normal", 3, WebGL2RenderingContext.FLOAT),
-                new VBOData(gl, textureCords, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, texCords, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT),
                 new VBOData(gl, indices, program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
             );
             terrainTile.textureID = textureID;
@@ -729,7 +739,7 @@ class MasterRenderer {
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     }
     public static clear(gl: WebGL2RenderingContext): void {
-        gl.clearColor(0, 0, 0, 0);
+        gl.clearColor(1, 1, 1, 1);
         gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
     }
     public updateProjectionMatrix(gl: WebGL2RenderingContext): void {
@@ -786,7 +796,6 @@ async function createContext(): Promise<WebGL2RenderingContext> {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
         canvas.id = "webgl_canvas";
-        canvas.style.background = "black";
         document.body.appendChild(canvas);
         let gl: WebGL2RenderingContext = canvas.getContext("webgl2");
         if (gl) {
