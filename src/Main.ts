@@ -1,6 +1,6 @@
 //@ts-ignore
 import type { vec2, vec3, vec4, mat2, mat3, mat4, glMatrix, quat } from "gl-matrix";
-import type { seedrandom } from "./node_modules/seedrandom/seedrandom.min.js";
+import init, {generate_terrain_mesh, get_range_from_array, convert_float_array_to_uint_array} from "../perlin-noise/WASM-PerlinNoise/pkg/perlin_noise.js";
 //@ts-ignore
 const { vec2, vec3, vec4, mat2, mat3, mat4 } = glMatrix;
 class Program {
@@ -404,7 +404,7 @@ class TerrainTile {
     vaoID: number;
     textureID: number;
     pos: vec3;
-    public static TILE_SIZE: number = 25;
+    public static TILE_SIZE: number = 50;
     public createTransformationMatrix(): mat4 {
         //@ts-ignore
         return mat4.translate(mat4.create(), mat4.create(), vec3.negate(vec3.create(), this.pos));
@@ -412,7 +412,16 @@ class TerrainTile {
     public static async generateTerrainTile(gl: WebGL2RenderingContext, program: Program, resolution: number, pos: vec3, textureID: number, seed: number): Promise<TerrainTile> {
         return new Promise<TerrainTile>(async (resolve) => {
             var terrainTile: TerrainTile = new TerrainTile();
-
+            /*
+            await init();
+            const VERTEX_COUNT =  Math.pow(resolution + 1, 2);
+            const INDEX_COUNT = Math.pow(resolution, 2) * 6;
+            var array = generate_terrain_mesh(resolution, 10);
+            var vertices = get_range_from_array(array, 0, VERTEX_COUNT * 3);
+            var normals = get_range_from_array(array, VERTEX_COUNT * 3, VERTEX_COUNT * 6);
+            var textureCords = get_range_from_array(array, VERTEX_COUNT * 6, VERTEX_COUNT * 8);
+            var indices = convert_float_array_to_uint_array(get_range_from_array(array, VERTEX_COUNT * 8, VERTEX_COUNT * 8 + INDEX_COUNT));
+            */
             let VERTICES_PER_ROW: number = resolution + 1;
             let VERTEX_COUNT: number = Math.pow(VERTICES_PER_ROW, 2);
             let QUADS_PER_ROW: number = resolution * 2;
@@ -523,6 +532,11 @@ class TerrainTile {
             resolve(terrainTile);
         });
     }
+}
+class GUI{
+    pos:vec2;
+    texture: number;
+    
 }
 class Light {
     dir: vec3;
@@ -678,6 +692,9 @@ class TerrainRenderer {
     public render(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, drawMode: number, light: Light, terrainTiles: TerrainTile[]): void {
         this.prepare(gl);
         terrainTiles.forEach((currentTile: TerrainTile) => {
+            if(currentTile == undefined){
+                return;
+            }
             VAO.getVAO(currentTile.vaoID).enableVAO(gl);
             Texture.getTexture(currentTile.textureID).activateTexture(gl);
             this.loadDataToUniforms(gl, projectionViewMatrix, light, currentTile)
@@ -785,7 +802,7 @@ async function updateEntities(entities: Entity[], deltaTime: number): Promise<vo
         currentEntity.update(deltaTime);
     });
 }
-async function init(): Promise<void> {
+async function main(): Promise<void> {
     var gl: WebGL2RenderingContext = await createContext();
 
     var renderer: MasterRenderer = await MasterRenderer.init(gl);
@@ -796,10 +813,13 @@ async function init(): Promise<void> {
     //@ts-ignore
     var sun: Light = new Light(vec3.fromValues(5, 7, 10));
 
-    var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 3157);
+    var tile: TerrainTile;
+    TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, 0], await Texture.loadTexture(gl, "grass.jpg"), 3157).then((terrainTile: TerrainTile) => {
+        tile = terrainTile;
+    });
     
     var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
-    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
+    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "leaf");
     var entities: Entity[] = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
     entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));
@@ -865,4 +885,4 @@ async function init(): Promise<void> {
         window.requestAnimationFrame(mainLoop);
     }
 }
-document.body.onload = init;
+document.body.onload = main;

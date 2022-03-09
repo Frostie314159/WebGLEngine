@@ -397,7 +397,7 @@ class TerrainTile {
     vaoID;
     textureID;
     pos;
-    static TILE_SIZE = 25;
+    static TILE_SIZE = 50;
     createTransformationMatrix() {
         //@ts-ignore
         return mat4.translate(mat4.create(), mat4.create(), vec3.negate(vec3.create(), this.pos));
@@ -405,6 +405,16 @@ class TerrainTile {
     static async generateTerrainTile(gl, program, resolution, pos, textureID, seed) {
         return new Promise(async (resolve) => {
             var terrainTile = new TerrainTile();
+            /*
+            await init();
+            const VERTEX_COUNT =  Math.pow(resolution + 1, 2);
+            const INDEX_COUNT = Math.pow(resolution, 2) * 6;
+            var array = generate_terrain_mesh(resolution, 10);
+            var vertices = get_range_from_array(array, 0, VERTEX_COUNT * 3);
+            var normals = get_range_from_array(array, VERTEX_COUNT * 3, VERTEX_COUNT * 6);
+            var textureCords = get_range_from_array(array, VERTEX_COUNT * 6, VERTEX_COUNT * 8);
+            var indices = convert_float_array_to_uint_array(get_range_from_array(array, VERTEX_COUNT * 8, VERTEX_COUNT * 8 + INDEX_COUNT));
+            */
             let VERTICES_PER_ROW = resolution + 1;
             let VERTEX_COUNT = Math.pow(VERTICES_PER_ROW, 2);
             let QUADS_PER_ROW = resolution * 2;
@@ -513,6 +523,10 @@ class TerrainTile {
             resolve(terrainTile);
         });
     }
+}
+class GUI {
+    pos;
+    texture;
 }
 class Light {
     dir;
@@ -667,6 +681,9 @@ class TerrainRenderer {
     render(gl, projectionViewMatrix, drawMode, light, terrainTiles) {
         this.prepare(gl);
         terrainTiles.forEach((currentTile) => {
+            if (currentTile == undefined) {
+                return;
+            }
             VAO.getVAO(currentTile.vaoID).enableVAO(gl);
             Texture.getTexture(currentTile.textureID).activateTexture(gl);
             this.loadDataToUniforms(gl, projectionViewMatrix, light, currentTile);
@@ -775,16 +792,19 @@ async function updateEntities(entities, deltaTime) {
         currentEntity.update(deltaTime);
     });
 }
-async function init() {
+async function main() {
     var gl = await createContext();
     var renderer = await MasterRenderer.init(gl);
     //@ts-ignore
     var camera = new Camera(vec3.fromValues(0, -1, 0), vec3.fromValues(0, 0, 0));
     //@ts-ignore
     var sun = new Light(vec3.fromValues(5, 7, 10));
-    var tile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 3157);
+    var tile;
+    TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, 0], await Texture.loadTexture(gl, "grass.jpg"), 3157).then((terrainTile) => {
+        tile = terrainTile;
+    });
     var entity = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
-    var entity2 = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
+    var entity2 = await Model.loadModel(gl, renderer.entityRenderer.program, "leaf");
     var entities = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
     entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));
@@ -852,5 +872,5 @@ async function init() {
         window.requestAnimationFrame(mainLoop);
     }
 }
-document.body.onload = init;
+document.body.onload = main;
 export {};
