@@ -169,7 +169,7 @@ class VAO {
                 indices.push(currentVertexPointer);
                 let currentTexCord = textureCords[Number.parseInt(vertex[1]) - 1];
                 textureCordArray[currentVertexPointer * 2] = currentTexCord[0];
-                textureCordArray[currentVertexPointer * 2 + 1] = currentTexCord[1];
+                textureCordArray[currentVertexPointer * 2 + 1] = 1 - currentTexCord[1];
                 let currentNormal = normals[Number.parseInt(vertex[2]) - 1];
                 normalArray[currentVertexPointer * 3] = currentNormal[0];
                 normalArray[currentVertexPointer * 3 + 1] = currentNormal[1];
@@ -331,9 +331,6 @@ class Entity {
         if (this.pos[1] <= 0) {
             this.pos[1] += Entity.G * deltaTime;
         }
-        this.rot[0] += 20 * deltaTime;
-        this.rot[1] += 20 * deltaTime;
-        this.rot[2] += 20 * deltaTime;
     }
     createTransformationMatrix() {
         //@ts-ignore
@@ -809,11 +806,11 @@ async function main() {
     //@ts-ignore
     var sun = new Light(vec3.fromValues(5, 7, 10));
     var tile;
-    TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 75, [0, 0, 0], await Texture.loadTexture(gl, "grass.jpg"), 3157).then((terrainTile) => {
+    TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 1, [0, 0, 0], await Texture.loadTexture(gl, "grass.jpg"), 3157).then((terrainTile) => {
         tile = terrainTile;
     });
     var entity = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
-    var entity2 = await Model.loadModel(gl, renderer.entityRenderer.program, "leaf");
+    var entity2 = await Model.loadModel(gl, renderer.entityRenderer.program, "screen");
     var entities = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
     entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));
