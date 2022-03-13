@@ -161,21 +161,23 @@ class VAO {
             var vertices: vec3[] = [];
             var normals: vec3[] = [];
             var textureCords: vec2[] = [];
-            var indices: number[] = [];
-            var vertexArray: Float32Array;
-            var normalArray: Float32Array;
-            var textureCordArray: Float32Array;
+            var vertexArray: vec3[] = [];
+            var normalArray: vec3[] = [];
+            var textureCordArray: vec2[] = [];
             var objFileContents: string = await loadFile(`res/assets/${objName}.obj`);
             function processVertex(vertex: string[]): void {
+
+                /*
                 let currentVertexPointer: number = Number.parseInt(vertex[0]) - 1;
                 indices.push(currentVertexPointer);
                 let currentTexCord: vec2 = textureCords[Number.parseInt(vertex[1]) - 1];
                 textureCordArray[currentVertexPointer * 2] = currentTexCord[0];
-                textureCordArray[currentVertexPointer * 2 + 1] = currentTexCord[1];
+                textureCordArray[currentVertexPointer * 2 + 1] = 1 - currentTexCord[1];
                 let currentNormal: vec3 = normals[Number.parseInt(vertex[2]) - 1];
                 normalArray[currentVertexPointer * 3] = currentNormal[0];
                 normalArray[currentVertexPointer * 3 + 1] = currentNormal[1];
                 normalArray[currentVertexPointer * 3 + 2] = currentNormal[2];
+                */
             }
             objFileContents.split(/\r\n|\r|\n/).forEach((currentLine: string) => {
                 if (currentLine.startsWith("v ")) {
@@ -183,11 +185,6 @@ class VAO {
                     //@ts-ignore
                     vertices.push(vec3.fromValues(Number.parseFloat(lineSplit[1]), Number.parseFloat(lineSplit[2]), Number.parseFloat(lineSplit[3])));
                 } else if (currentLine.startsWith("vn ")) {
-                    if (vertexArray == undefined) {
-                        vertexArray = new Float32Array(vertices.length * 3);
-                        normalArray = new Float32Array(vertices.length * 3);
-                        textureCordArray = new Float32Array(vertices.length * 2);
-                    }
                     var lineSplit: string[] = currentLine.split(" ");
                     //@ts-ignore
                     normals.push(vec3.fromValues(Number.parseFloat(lineSplit[1]), Number.parseFloat(lineSplit[2]), Number.parseFloat(lineSplit[3])));
@@ -204,15 +201,18 @@ class VAO {
                     console.warn(`Unknown keyword ${currentLine}`);
                 }
             });
+            /*
             vertices.forEach((currentVertex: vec3, i: number) => {
                 vertexArray[i * 3] = currentVertex[0];
                 vertexArray[i * 3 + 1] = currentVertex[1];
                 vertexArray[i * 3 + 2] = currentVertex[2];
             });
+            */
+            console.log([vertexArray, textureCordArray, normalArray, indices]);
             resolve(await VAO.loadVAOFromArray(gl, false,
-                new VBOData(gl, vertexArray, program, "in_pos", 3, WebGL2RenderingContext.FLOAT),
-                new VBOData(gl, normalArray, program, "in_normal", 3, WebGL2RenderingContext.FLOAT),
-                new VBOData(gl, textureCordArray, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, new Float32Array(vertexArray), program, "in_pos", 3, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, new Float32Array(normalArray), program, "in_normal", 3, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, new Float32Array(textureCordArray), program, "in_texCord", 2, WebGL2RenderingContext.FLOAT),
                 new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
             ));
         });
@@ -334,9 +334,6 @@ class Entity {
         if (this.pos[1] <= 0) {
             this.pos[1] += Entity.G * deltaTime;
         }
-        this.rot[0] += 20 * deltaTime;
-        this.rot[1] += 20 * deltaTime;
-        this.rot[2] += 20 * deltaTime;
     }
     public createTransformationMatrix(): mat4 {
         //@ts-ignore
@@ -807,8 +804,8 @@ async function main(): Promise<void> {
 
     var tile: TerrainTile = await TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 1, [0, 0, TerrainTile.TILE_SIZE * 2], await Texture.loadTexture(gl, "grass.jpg"), 232323);
     
-    var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "teapot.png");
-    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "screen");
+    var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "cylinder.png");
+    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "cylinder");
     var entities: Entity[] = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
     entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));
