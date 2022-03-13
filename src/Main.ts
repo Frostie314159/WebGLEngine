@@ -161,9 +161,14 @@ class VAO {
             var vertices: vec3[] = [];
             var normals: vec3[] = [];
             var textureCords: vec2[] = [];
-            var vertexArray: vec3[] = [];
-            var normalArray: vec3[] = [];
-            var textureCordArray: vec2[] = [];
+
+            var processedVertices: vec3[] = [];
+            var processedNormals: vec3[] = [];
+            var processedTextureCords: vec2[] = [];
+            
+            var vertexArray: Float32Array;
+            var normalArray: Float32Array;
+            var textureCordArray: Float32Array;
             var objFileContents: string = await loadFile(`res/assets/${objName}.obj`);
             function processVertex(vertex: string[]): void {
 
