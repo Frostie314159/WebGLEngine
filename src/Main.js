@@ -169,7 +169,7 @@ class VAO {
                 indices.push(currentVertexPointer);
                 let currentTexCord = textureCords[Number.parseInt(vertex[1]) - 1];
                 textureCordArray[currentVertexPointer * 2] = currentTexCord[0];
-                textureCordArray[currentVertexPointer * 2 + 1] = currentTexCord[1];
+                textureCordArray[currentVertexPointer * 2 + 1] = 1 - currentTexCord[1];
                 let currentNormal = normals[Number.parseInt(vertex[2]) - 1];
                 normalArray[currentVertexPointer * 3] = currentNormal[0];
                 normalArray[currentVertexPointer * 3 + 1] = currentNormal[1];
@@ -211,99 +211,7 @@ class VAO {
                 vertexArray[i * 3 + 1] = currentVertex[1];
                 vertexArray[i * 3 + 2] = currentVertex[2];
             });
-            /*
-             function parseOBJ(text) {
-                 // because indices are base 1 let's just fill in the 0th data
-                 const objPositions = [[0, 0, 0]];
-                 const objTexcoords = [[0, 0]];
-                 const objNormals = [[0, 0, 0]];
- 
-                 // same order as `f` indices
-                 const objVertexData = [
-                     objPositions,
-                     objTexcoords,
-                     objNormals,
-                 ];
- 
-                 // same order as `f` indices
-                 let webglVertexData = [
-                     [],   // positions
-                     [],   // texcoords
-                     [],   // normals
-                 ];
- 
-                 function addVertex(vert) {
-                     const ptn = vert.split('/');
-                     ptn.forEach((objIndexStr, i) => {
-                         if (!objIndexStr) {
-                             return;
-                         }
-                         const objIndex = parseInt(objIndexStr);
-                         const index = objIndex + (objIndex >= 0 ? 0 : objVertexData[i].length);
-                         webglVertexData[i].push(...objVertexData[i][index]);
-                     });
-                 }
- 
-                 const keywords = {
-                     v(parts) {
-                         objPositions.push(parts.map(parseFloat));
-                     },
-                     vn(parts) {
-                         objNormals.push(parts.map(parseFloat));
-                     },
-                     vt(parts) {
-                         objTexcoords.push(parts.map(parseFloat));
-                     },
-                     f(parts) {
-                         const numTriangles = parts.length - 2;
-                         for (let tri = 0; tri < numTriangles; ++tri) {
-                             addVertex(parts[0]);
-                             addVertex(parts[tri + 1]);
-                             addVertex(parts[tri + 2]);
-                         }
-                     },
-                 };
-                 const keywordRE = /(\w*)(?: )*(.*)/;
-                 const lines = text.split('\n');
-                 for (let lineNo = 0; lineNo < lines.length; ++lineNo) {
-                     const line = lines[lineNo].trim();
-                     if (line === '' || line.startsWith('#')) {
-                         continue;
-                     }
-                     let parts = line.split(/\s+/);
-                     const m = keywordRE.exec(line);
-                     if (!m) {
-                         continue;
-                     }
-                     const [, keyword, unparsedArgs] = m;
-                     parts = line.split(/\s+/).slice(1);
-                     const handler = keywords[keyword];
-                     if (!handler) {
-                         console.warn('unhandled keyword:', keyword, 'at line', lineNo + 1);
-                         continue;
-                     }
-                     handler(parts, unparsedArgs);
-                 }
-                 return {
-                     position: webglVertexData[0],
-                     texcoord: webglVertexData[1],
-                     normal: webglVertexData[2],
-                 };
-             }
-             let data = parseOBJ(await loadFile(`res/assets/${objName}.obj`));
-             let vertices: Float32Array = new Float32Array(data.position.length);
-             let normals: Float32Array = new Float32Array(data.normal.length);
-             let textureCords: Float32Array = new Float32Array(data.texcoord.length);
-             data.position.forEach((currentPosition: number, index: number) => {
-                 vertices[index] = currentPosition;
-             });
-             data.normal.forEach((currentNormal: number, index: number) => {
-                 normals[index] = currentNormal;
-             });
-             data.texcoord.forEach((currentPosition: number, index: number) => {
-                 textureCords[index] = currentPosition;
-             });
-             */
+            console.log([vertexArray, textureCordArray, normalArray, indices]);
             resolve(await VAO.loadVAOFromArray(gl, false, new VBOData(gl, vertexArray, program, "in_pos", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, normalArray, program, "in_normal", 3, WebGL2RenderingContext.FLOAT), new VBOData(gl, textureCordArray, program, "in_texCord", 2, WebGL2RenderingContext.FLOAT), new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)));
         });
     }
