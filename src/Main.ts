@@ -819,7 +819,7 @@ async function main(): Promise<void> {
     });
 
     var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "uvgrid.png");
-    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
+    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "screen");
     var entities: Entity[] = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
     entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));
