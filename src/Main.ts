@@ -162,16 +162,23 @@ class VAO {
             var normals: vec3[] = [];
             var textureCords: vec2[] = [];
 
-            var processedVertices: vec3[] = [];
-            var processedNormals: vec3[] = [];
-            var processedTextureCords: vec2[] = [];
-            
-            var vertexArray: Float32Array;
-            var normalArray: Float32Array;
-            var textureCordArray: Float32Array;
+            var processedVertices: number[] = [];
+            var processedNormals: number[] = [];
+            var processedTextureCords: number[] = [];
+
             var objFileContents: string = await loadFile(`res/assets/${objName}.obj`);
             function processVertex(vertex: string[]): void {
-
+                let currentVertex: number = Number.parseInt(vertex[0]) - 1;
+                let currentTexCord: number = Number.parseInt(vertex[1]) - 1;
+                let currentNormal: number = Number.parseInt(vertex[2]) - 1;
+                processedVertices.push(vertices[currentVertex][0]);
+                processedVertices.push(vertices[currentVertex][1]);
+                processedVertices.push(vertices[currentVertex][2]);
+                processedNormals.push(normals[currentNormal][0]);
+                processedNormals.push(normals[currentNormal][1]);
+                processedNormals.push(normals[currentNormal][2]);
+                processedTextureCords.push(textureCords[currentTexCord][0]);
+                processedTextureCords.push(textureCords[currentTexCord][1]);
                 /*
                 let currentVertexPointer: number = Number.parseInt(vertex[0]) - 1;
                 indices.push(currentVertexPointer);
@@ -206,19 +213,10 @@ class VAO {
                     console.warn(`Unknown keyword ${currentLine}`);
                 }
             });
-            /*
-            vertices.forEach((currentVertex: vec3, i: number) => {
-                vertexArray[i * 3] = currentVertex[0];
-                vertexArray[i * 3 + 1] = currentVertex[1];
-                vertexArray[i * 3 + 2] = currentVertex[2];
-            });
-            */
-            console.log([vertexArray, textureCordArray, normalArray, indices]);
             resolve(await VAO.loadVAOFromArray(gl, false,
-                new VBOData(gl, new Float32Array(vertexArray), program, "in_pos", 3, WebGL2RenderingContext.FLOAT),
-                new VBOData(gl, new Float32Array(normalArray), program, "in_normal", 3, WebGL2RenderingContext.FLOAT),
-                new VBOData(gl, new Float32Array(textureCordArray), program, "in_texCord", 2, WebGL2RenderingContext.FLOAT),
-                new VBOData(gl, new Uint16Array(indices), program, "", 1, WebGL2RenderingContext.UNSIGNED_SHORT, true)
+                new VBOData(gl, new Float32Array(processedVertices), program, "in_pos", 3, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, new Float32Array(processedNormals), program, "in_normal", 3, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, new Float32Array(processedTextureCords), program, "in_texCord", 2, WebGL2RenderingContext.FLOAT)
             ));
         });
     }
@@ -819,7 +817,7 @@ async function main(): Promise<void> {
         tile = terrainTile;
     });
 
-    var entity: number = await Model.loadModel(gl, renderer.entityRenderer.program, "cube");
+    var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "uvgrid");
     var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "screen");
     var entities: Entity[] = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
