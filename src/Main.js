@@ -174,7 +174,7 @@ class VAO {
                 processedNormals.push(normals[currentNormal][1]);
                 processedNormals.push(normals[currentNormal][2]);
                 processedTextureCords.push(textureCords[currentTexCord][0]);
-                processedTextureCords.push(textureCords[currentTexCord][1]);
+                processedTextureCords.push(1 - textureCords[currentTexCord][1]);
                 /*
                 let currentVertexPointer: number = Number.parseInt(vertex[0]) - 1;
                 indices.push(currentVertexPointer);
@@ -281,7 +281,8 @@ class Texture {
             texture.bindTexture(gl);
             var image = await loadImage(`res/assets/${textureName}`);
             gl.texImage2D(WebGL2RenderingContext.TEXTURE_2D, 0, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.UNSIGNED_BYTE, image);
-            gl.generateMipmap(WebGL2RenderingContext.TEXTURE_2D);
+            let ext = gl.getExtension("EXT_texture_filter_anisotropic");
+            gl.texParameterf(WebGL2RenderingContext.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT));
             texture.unbindTexture(gl);
             Texture.textures.push(texture);
             resolve(Texture.textures.length - 1);
@@ -801,7 +802,7 @@ async function main() {
     TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 1, [0, 0, 0], await Texture.loadTexture(gl, "grass.jpg"), 3157).then((terrainTile) => {
         tile = terrainTile;
     });
-    var entity = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "uvgrid");
+    var entity = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "uvgrid.png");
     var entity2 = await Model.loadModel(gl, renderer.entityRenderer.program, "screen");
     var entities = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
