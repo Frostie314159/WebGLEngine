@@ -1,6 +1,5 @@
 //@ts-ignore
 import type { vec2, vec3, vec4, mat2, mat3, mat4, glMatrix, quat } from "gl-matrix";
-import init, { generate_terrain_mesh, get_range_from_array, convert_float_array_to_uint_array } from "../perlin-noise/WASM-PerlinNoise/pkg/perlin_noise.js";
 //@ts-ignore
 const { vec2, vec3, vec4, mat2, mat3, mat4 } = glMatrix;
 class Program {
@@ -285,8 +284,9 @@ class Texture {
             texture.bindTexture(gl);
             var image: HTMLImageElement = await loadImage(`res/assets/${textureName}`);
             gl.texImage2D(WebGL2RenderingContext.TEXTURE_2D, 0, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.UNSIGNED_BYTE, image);
+            gl.generateMipmap(WebGL2RenderingContext.TEXTURE_2D);
             let ext: EXT_texture_filter_anisotropic = gl.getExtension("EXT_texture_filter_anisotropic");
-            gl.texParameterf(WebGL2RenderingContext.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT));
+            gl.texParameterf(WebGL2RenderingContext.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, 4);
             texture.unbindTexture(gl);
             Texture.textures.push(texture);
             resolve(Texture.textures.length - 1);
@@ -819,7 +819,7 @@ async function main(): Promise<void> {
     });
 
     var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "uvgrid.png");
-    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "screen");
+    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
     var entities: Entity[] = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
     entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));

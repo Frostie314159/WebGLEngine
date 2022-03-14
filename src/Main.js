@@ -281,8 +281,9 @@ class Texture {
             texture.bindTexture(gl);
             var image = await loadImage(`res/assets/${textureName}`);
             gl.texImage2D(WebGL2RenderingContext.TEXTURE_2D, 0, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.RGBA, WebGL2RenderingContext.UNSIGNED_BYTE, image);
+            gl.generateMipmap(WebGL2RenderingContext.TEXTURE_2D);
             let ext = gl.getExtension("EXT_texture_filter_anisotropic");
-            gl.texParameterf(WebGL2RenderingContext.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT));
+            gl.texParameterf(WebGL2RenderingContext.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, 4);
             texture.unbindTexture(gl);
             Texture.textures.push(texture);
             resolve(Texture.textures.length - 1);
@@ -803,7 +804,7 @@ async function main() {
         tile = terrainTile;
     });
     var entity = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "uvgrid.png");
-    var entity2 = await Model.loadModel(gl, renderer.entityRenderer.program, "screen");
+    var entity2 = await Model.loadModel(gl, renderer.entityRenderer.program, "stall");
     var entities = [];
     entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
     entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));
