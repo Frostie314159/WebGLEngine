@@ -1,6 +1,6 @@
-in vec4 in_pos;
-in vec3 in_normal;
-in vec2 in_texCord;
+in vec4 POSITION;
+in vec3 NORMAL;
+in vec2 TEXCOORD_0;
 
 out vec3 out_normal;
 out vec2 out_texCord;
@@ -9,7 +9,7 @@ uniform mat4 u_projectionViewTransformationMatrix;
 uniform mat4 u_transformInverseTransposeMatrix;
 
 void main(){
-    out_normal = mat3(u_transformInverseTransposeMatrix) * in_normal;
-    out_texCord = in_texCord;
-    gl_Position = u_projectionViewTransformationMatrix * in_pos;
+    out_normal = mat3(u_transformInverseTransposeMatrix) * NORMAL;
+    out_texCord = TEXCOORD_0;
+    gl_Position = u_projectionViewTransformationMatrix * POSITION;
 }

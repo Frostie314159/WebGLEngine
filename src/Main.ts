@@ -1,7 +1,7 @@
 //@ts-ignore
 import type { vec2, vec3, vec4, mat2, mat3, mat4, glMatrix, quat } from "gl-matrix";
 //@ts-ignore
-const { vec2, vec3, vec4, mat2, mat3, mat4 } = glMatrix;
+const { vec2, vec3, vec4, mat2, mat3, mat4, quat } = glMatrix;
 class Program {
     shaders: WebGLShader[];
     program: WebGLProgram;
@@ -213,9 +213,9 @@ class VAO {
                 }
             });
             resolve(await VAO.loadVAOFromArray(gl, false,
-                new VBOData(gl, new Float32Array(processedVertices), program, "in_pos", 3, WebGL2RenderingContext.FLOAT),
-                new VBOData(gl, new Float32Array(processedNormals), program, "in_normal", 3, WebGL2RenderingContext.FLOAT),
-                new VBOData(gl, new Float32Array(processedTextureCords), program, "in_texCord", 2, WebGL2RenderingContext.FLOAT)
+                new VBOData(gl, new Float32Array(processedVertices), program, "POSITION", 3, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, new Float32Array(processedNormals), program, "NORMAL", 3, WebGL2RenderingContext.FLOAT),
+                new VBOData(gl, new Float32Array(processedTextureCords), program, "TEXCOORD_0", 2, WebGL2RenderingContext.FLOAT)
             ));
         });
     }
@@ -534,11 +534,6 @@ class TerrainTile {
         });
     }
 }
-class GUI {
-    pos: vec2;
-    texture: number;
-
-}
 class Light {
     dir: vec3;
     constructor(dir: vec3) {
@@ -747,6 +742,183 @@ class MasterRenderer {
         this.entityRenderer.render(gl, camera.pos, projectionViewMatrix, this.drawMode, light, entities);
     }
 }
+class Buffer {
+    byteLength: number;
+    arrayBuffer: ArrayBuffer;
+    constructor(byteLength: number, arrayBuffer: ArrayBuffer) {
+        this.byteLength = byteLength;
+        this.arrayBuffer = arrayBuffer;
+    }
+    public static async loadBuffer(bufferInfo): Promise<Buffer> {
+        return new Promise<Buffer>(async (resolve, reject) => {
+            resolve(new Buffer(bufferInfo.byteLength, await (await fetch(bufferInfo.uri)).arrayBuffer()));
+        });
+    }
+    public getDataFromAccessor(accessor: Accessor, gltf: glTF): Float32Array | Uint16Array {
+        return accessor.componentType == 5126 ? new Float32Array(this.arrayBuffer, gltf.bufferViews[accessor.bufferView].byteOffset, gltf.bufferViews[accessor.bufferView].byteLength / 4) : new Uint16Array(this.arrayBuffer, gltf.bufferViews[accessor.bufferView].byteOffset, gltf.bufferViews[accessor.bufferView].byteLength / 2);
+    }
+}
+class BufferView {
+    buffer: number;
+    byteLength: number;
+    byteOffset: number;
+    constructor(bufferViewInfo) {
+        this.buffer = bufferViewInfo.buffer;
+        this.byteLength = bufferViewInfo.byteLength;
+        this.byteOffset = bufferViewInfo.byteOffset;
+    }
+}
+class Accessor {
+    bufferView: number;
+    componentType: number;
+    count: number;
+    type: string;
+    constructor(accessorInfo) {
+        this.bufferView = accessorInfo.bufferView;
+        this.componentType = accessorInfo.componentType;
+        this.count = accessorInfo.count;
+        this.type = accessorInfo.type;
+    }
+}
+class Primitive {
+    attributes: number[];
+    indexAccessor: number;
+    constructor(primitiveInfo) {
+        this.attributes = [];
+        for (const key in primitiveInfo.attributes) {
+            this.attributes.push(primitiveInfo.attributes[key]);
+        }
+        this.indexAccessor = primitiveInfo.indices;
+    }
+}
+class Mesh {
+    name: string;
+    primitive: Primitive;
+    constructor(meshInfo) {
+        this.name = meshInfo.name;
+        this.primitive = new Primitive(meshInfo.primitives[0]);
+    }
+    public async loadToVAO(gl: WebGL2RenderingContext, program: Program, gltf:glTF): Promise<number>{
+        return new Promise<number>(async (resolve, reject) => {
+            let positionAccessor: Accessor = gltf.accessors[this.primitive.attributes[0]]; 
+            let normalAccessor: Accessor = gltf.accessors[this.primitive.attributes[1]]; 
+            let texCoordAccessor: Accessor = gltf.accessors[this.primitive.attributes[2]];
+            let indexAccessor: Accessor = gltf.accessors[this.primitive.indexAccessor]; 
+            let positionBufferView: BufferView = gltf.bufferViews[positionAccessor.bufferView]; 
+            let normalBufferView: BufferView = gltf.bufferViews[normalAccessor.bufferView]; 
+            let texCoordBufferView: BufferView = gltf.bufferViews[texCoordAccessor.bufferView]; 
+            let indexBufferView: BufferView = gltf.bufferViews[indexAccessor.bufferView];
+            console.log(gltf.buffers);
+            resolve(await VAO.loadVAOFromArray(gl, false, 
+                    new VBOData(gl, gltf.buffers[positionBufferView.buffer].getDataFromAccessor(positionAccessor, gltf), program, "POSITION", 3, positionAccessor.componentType),
+                    new VBOData(gl, gltf.buffers[normalBufferView.buffer].getDataFromAccessor(normalAccessor, gltf), program, "NORMAL", 3, positionAccessor.componentType),
+                    new VBOData(gl, gltf.buffers[texCoordBufferView.buffer].getDataFromAccessor(texCoordAccessor, gltf), program, "TEXCOORD_0", 2, positionAccessor.componentType),
+                    new VBOData(gl, gltf.buffers[indexBufferView.buffer].getDataFromAccessor(indexAccessor, gltf), program, "", 1, positionAccessor.componentType, true)
+                ));
+        });
+    }
+}
+class Node {
+    mesh: number;
+    name: string;
+    type: number;
+    rotation: vec3;
+    scale: vec3;
+    translation: vec3;
+    constructor(nodeInfo) {
+        this.mesh = "mesh" in nodeInfo ? nodeInfo.mesh : -1;
+        this.name = nodeInfo.name;
+        if (this.name.startsWith("Light")) {
+            this.type = 1;
+        } else if (this.name.startsWith("Camera")) {
+            this.type = 2;
+        } else {
+            this.type = 0;
+        }
+        //@ts-ignore
+        this.rotation = nodeInfo.rotation ? quat.fromValues(nodeInfo.rotation[0], nodeInfo.rotation[1], nodeInfo.rotation[2], nodeInfo.rotation[3]) : quat.fromEuler(quat.create(), 0, 0, 0);
+        //@ts-ignore
+        this.scale = nodeInfo.scale ? vec3.fromValues(nodeInfo.scale[0], nodeInfo.scale[1], nodeInfo.scale[2]) : vec3.fromValues(1, 1, 1);
+        //@ts-ignore
+        this.translation = nodeInfo.translation ? vec3.fromValues(nodeInfo.translation[0], nodeInfo.translation[1], nodeInfo.translation[2]) : vec3.fromValues(1, 1, 1);
+    }
+}
+class Scene {
+    name: string;
+    entityNodes: Node[];
+    lightNodes: Node[];
+    cameraNodes: Node[];
+    entities: Entity[];
+    lights: Light[];
+    cameras: Camera[];
+    currentCamera: number;
+    constructor(sceneInfo, nodes: Node[]) {
+        this.name = sceneInfo.name;
+        this.entityNodes = [];
+        this.lightNodes = [];
+        this.cameraNodes = [];
+        sceneInfo.nodes.forEach((currentNode: number) => {
+            if (nodes[currentNode].type == 0) {
+                this.entityNodes.push(nodes[currentNode]);
+            } else if (nodes[currentNode].type == 1) {
+                this.lightNodes.push(nodes[currentNode]);
+            } else {
+                this.cameraNodes.push(nodes[currentNode]);
+            }
+        });
+        this.currentCamera = 0;
+    }
+    public switchCamera(camera: number) {
+        this.currentCamera = camera;
+    }
+    public load(){
+
+    }
+}
+class glTF {
+    buffers: Buffer[];
+    bufferViews: BufferView[];
+    accessors: Accessor[];
+    meshes: Mesh[];
+    nodes: Node[];
+    scenes: Scene[];
+    currentScene: number;
+    constructor() {
+        this.buffers = [];
+        this.bufferViews = [];
+        this.accessors = [];
+        this.meshes = [];
+        this.nodes = [];
+        this.scenes = [];
+    }
+    public static async loadGLTFFile(uri: string): Promise<glTF> {
+        return new Promise<glTF>(async (resolve, reject) => {
+            let glTFJSON = await (await fetch(uri)).json();
+            let tempGLTF: glTF = new glTF();
+            glTFJSON.buffers.forEach(async (currentBuffer) => {
+                tempGLTF.buffers.push(await Buffer.loadBuffer(currentBuffer));
+            });
+            glTFJSON.bufferViews.forEach((currentBufferView) => {
+                tempGLTF.bufferViews.push(new BufferView(currentBufferView));
+            });
+            glTFJSON.accessors.forEach((currentAccessor) => {
+                tempGLTF.accessors.push(new Accessor(currentAccessor));
+            });
+            glTFJSON.meshes.forEach((currentMesh) => {
+                tempGLTF.meshes.push(new Mesh(currentMesh));
+            });
+            glTFJSON.nodes.forEach((currentNode) => {
+                tempGLTF.nodes.push(new Node(currentNode));
+            });
+            glTFJSON.scenes.forEach((currentScene) => {
+                tempGLTF.scenes.push(new Scene(currentScene, tempGLTF.nodes));
+            });
+            tempGLTF.currentScene = glTFJSON.scene;
+            resolve(tempGLTF);
+        });
+    }
+
+}
 async function loadImage(imageName: string): Promise<HTMLImageElement> {
     return new Promise<HTMLImageElement>((resolve) => {
         var image: HTMLImageElement = new Image();
@@ -806,7 +978,9 @@ async function main(): Promise<void> {
     var gl: WebGL2RenderingContext = await createContext();
 
     var renderer: MasterRenderer = await MasterRenderer.init(gl);
-
+    var gltf: glTF = await glTF.loadGLTFFile("res/assets/untitled.gltf");
+    console.log(gltf);
+    console.log(VAO.getVAO(await gltf.meshes[0].loadToVAO(gl, renderer.entityRenderer.program, gltf)));
     //@ts-ignore
     var camera: Camera = new Camera(vec3.fromValues(0, -1, 0), vec3.fromValues(0, 0, 0));
 
