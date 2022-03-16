@@ -17,12 +17,9 @@ class Program {
     public delete(gl: WebGL2RenderingContext) {
         gl.deleteProgram(this.program);
     }
-    private static detectShaderType(name: string): number {
-        return name.endsWith(".vert") ? WebGL2RenderingContext.VERTEX_SHADER : WebGL2RenderingContext.FRAGMENT_SHADER;
-    }
-    private static async loadShader(gl: WebGL2RenderingContext, name: string): Promise<WebGLShader> {
+    private static async loadShader(gl: WebGL2RenderingContext, name: string, shaderType: number): Promise<WebGLShader> {
         return new Promise<WebGLShader>(async (resolve, reject) => {
-            var shader: WebGLShader = gl.createShader(this.detectShaderType(name));
+            var shader: WebGLShader = gl.createShader(shaderType);
             gl.shaderSource(shader, `#version 300 es
             ${await loadFile(`res/shaders/${name}`)}`);
             gl.compileShader(shader);
@@ -31,7 +28,7 @@ class Program {
             } else {
                 let shaderInfoLog: string = gl.getShaderInfoLog(shader);
                 gl.deleteShader(shader);
-                reject(new Error(shaderInfoLog));
+                reject(new Error(`${shaderType == WebGL2RenderingContext.VERTEX_SHADER ? "Vertex Shader: " : "Fragment Shader: "}${shaderInfoLog}`));
             }
         })
     }
@@ -39,7 +36,7 @@ class Program {
         return new Promise<Program>(async (resolve, reject) => {
             var program: Program = new Program();
             program.program = gl.createProgram();
-            program.shaders = await Promise.all([Program.loadShader(gl, `${name}.vert`), Program.loadShader(gl, `${name}.frag`)]);
+            program.shaders = await Promise.all([Program.loadShader(gl, `${name}.vert`, WebGL2RenderingContext.VERTEX_SHADER), Program.loadShader(gl, `${name}.frag`, WebGL2RenderingContext.FRAGMENT_SHADER)]);
             program.shaders.forEach((currentShader: WebGLShader) => {
                 gl.attachShader(program.program, currentShader);
             });
@@ -298,49 +295,57 @@ class Model {
     textureID: number;
     static models: Model[] = [];
     static testTexture: number = -1;
-    constructor(vaoID: number, textureID: number = -1){
+    constructor(vaoID: number, textureID: number = -1) {
         this.vaoID = vaoID;
         this.textureID = textureID == -1 ? Model.testTexture : textureID;
     }
-    private static async initTestTexture(gl: WebGL2RenderingContext): Promise<void>{
-        Model.testTexture = await Texture.loadTexture(gl, "uvgrid.png");
+    private static async initTestTexture(gl: WebGL2RenderingContext): Promise<void> {
+        Model.testTexture = await Texture.loadTexture(gl, "uvgrid.jpg");
     }
     public static getModel(modelID: number): Model {
         return Model.models[modelID];
     }
     public static async loadModel(gl: WebGL2RenderingContext, program: Program, name: string): Promise<number> {
         return new Promise<number>(async (resolve) => {
-            if(this.testTexture == -1){
+            if (this.testTexture == -1) {
                 await Model.initTestTexture(gl);
             }
             Model.models.push(new Model(await VAO.loadVAOFromOBJFile(gl, program, name), await Texture.loadTexture(gl, `${name}.png`)));
             resolve(Model.models.length - 1);
         });
     }
-    public static async loadModelWithoutTexture(gl: WebGL2RenderingContext, program: Program, name: string): Promise<number>{
+    public static async loadModelWithoutTexture(gl: WebGL2RenderingContext, program: Program, name: string): Promise<number> {
         return new Promise<number>(async (resolve, reject) => {
-            if(this.testTexture == -1){
+            if (this.testTexture == -1) {
                 await Model.initTestTexture(gl);
             }
             Model.models.push(new Model(await VAO.loadVAOFromOBJFile(gl, program, name)));
             resolve(Model.models.length - 1);
         });
-    }    
+    }
     public static async loadModelWithSeperateResources(gl: WebGL2RenderingContext, program: Program, modelName: string, textureName: string): Promise<number> {
         return new Promise<number>(async (resolve) => {
-            if(this.testTexture == -1){
+            if (this.testTexture == -1) {
                 await Model.initTestTexture(gl);
             }
             Model.models.push(new Model(await VAO.loadVAOFromOBJFile(gl, program, modelName), await Texture.loadTexture(gl, textureName)));
             resolve(Model.models.length - 1);
         });
     }
-    public static async loadWithCustomVAO(gl: WebGL2RenderingContext, program: Program, vaoID: number): Promise<number>{
+    public static async loadWithCustomVAO(gl: WebGL2RenderingContext, program: Program, vaoID: number): Promise<number> {
         return new Promise<number>(async (resolve, reject) => {
-            if(this.testTexture == -1){
+            if (this.testTexture == -1) {
                 await Model.initTestTexture(gl);
             }
             Model.models.push(new Model(vaoID, Model.testTexture));
+            resolve(Model.models.length - 1);
+        });
+    } public static async loadWithCustomVAOAndTexture(gl: WebGL2RenderingContext, program: Program, vaoID: number, textureID: number): Promise<number> {
+        return new Promise<number>(async (resolve, reject) => {
+            if (this.testTexture == -1) {
+                await Model.initTestTexture(gl);
+            }
+            Model.models.push(new Model(vaoID, textureID));
             resolve(Model.models.length - 1);
         });
     }
@@ -348,31 +353,30 @@ class Model {
 class Entity {
     modelID: number;
     pos: vec3;
-    rot: vec3;
+    rot: quat;
+    scl: vec3;
     disableFarPlaneCulling: boolean;
     disableBackFaceCulling: boolean;
     static G = 9.81;
-    constructor(modelID: number, pos: vec3, rot: vec3, disableBackFaceCulling: boolean = false, disableFarPlaneCulling: boolean = false) {
+    constructor(modelID: number, pos: vec3, rot: quat, scl: vec3, disableBackFaceCulling: boolean = false, disableFarPlaneCulling: boolean = false) {
         this.modelID = modelID;
         this.pos = pos;
         this.rot = rot;
+        this.scl = scl;
         //TODO: This is terrible
         this.disableFarPlaneCulling = disableFarPlaneCulling;
         this.disableBackFaceCulling = disableBackFaceCulling;
     }
     public update(deltaTime: number): void {
-        if (this.pos[1] <= 0) {
-            this.pos[1] += Entity.G * deltaTime;
+        if (this.pos[1] >= 0) {
+            this.pos[1] -= Entity.G * deltaTime;
         }
     }
     public createTransformationMatrix(): mat4 {
         //@ts-ignore
         var transformationMatrix: mat4 = mat4.create();
         //@ts-ignore
-        mat4.translate(transformationMatrix, transformationMatrix, vec3.negate(vec3.create(), this.pos));
-
-        rotateXYZ(transformationMatrix, this.rot);
-
+        mat4.fromRotationTranslationScale(transformationMatrix, this.rot, this.pos, this.scl);
         return transformationMatrix;
     }
 }
@@ -434,20 +438,10 @@ class TerrainTile {
     public static TILE_SIZE: number = 50;
     public createTransformationMatrix(): mat4 {
         //@ts-ignore
-        return mat4.translate(mat4.create(), mat4.create(), vec3.negate(vec3.create(), this.pos));
+        return mat4.translate(mat4.create(), mat4.create(), this.pos);
     }
     public static async generateTerrainTile(gl: WebGL2RenderingContext, program: Program, resolution: number, pos: vec3, textureID: number, seed: number): Promise<TerrainTile> {
         return new Promise<TerrainTile>(async (resolve) => {
-            /*
-            await init();
-            let data: Float32Array = generate_terrain_mesh(resolution, TerrainTile.TILE_SIZE);
-            const VERTEX_COUNT =  Math.pow(resolution + 1, 2);
-            const INDEX_COUNT = Math.pow(resolution, 2) * 6;
-            var vertices = get_range_from_array(data, 0, VERTEX_COUNT * 3);
-            var normals = get_range_from_array(data, VERTEX_COUNT * 3, VERTEX_COUNT * 6);
-            var texCords = get_range_from_array(data, VERTEX_COUNT * 6, VERTEX_COUNT * 8);
-            var indices = get_range_from_array(data, VERTEX_COUNT * 8, VERTEX_COUNT * 8 + INDEX_COUNT);
-            */
             var terrainTile: TerrainTile = new TerrainTile();
             let VERTICES_PER_ROW: number = resolution + 1;
             let VERTEX_COUNT: number = Math.pow(VERTICES_PER_ROW, 2);
@@ -560,13 +554,17 @@ class TerrainTile {
         });
     }
 }
-class Light {
+class DirectionalLight {
     dir: vec3;
     constructor(dir: vec3) {
         //@ts-ignore
-        this.dir = vec3.create();
-        //@ts-ignore
-        vec3.normalize(this.dir, dir);
+        this.dir = vec3.normalize(vec3.create(), dir);
+    }
+}
+class PointLight {
+    pos: vec3;
+    constructor(pos: vec3) {
+        this.pos = pos;
     }
 }
 class Camera {
@@ -582,7 +580,8 @@ class Camera {
         //@ts-ignore
         this.viewMatrix = mat4.identity(mat4.create());
         //@ts-ignore
-        mat4.translate(this.viewMatrix, this.viewMatrix, vec3.negate(vec3.create(), this.pos));
+        mat4.translate(this.viewMatrix, this.viewMatrix, this.pos);
+        //@ts-ignore
         rotateXYZ(this.viewMatrix, this.rot);
         //@ts-ignore
         this.viewMatrix = mat4.invert(this.viewMatrix, this.viewMatrix);
@@ -590,15 +589,24 @@ class Camera {
 }
 class EntityRenderer {
     program: Program;
+    lightCountLocation: WebGLUniformLocation;
+    lightPositionsLocation: WebGLUniformLocation;
+    viewWorldPositionLocation: WebGLUniformLocation;
+    worldMatrixLocation: WebGLUniformLocation;
     projectionViewTransformationMatrixLocation: WebGLUniformLocation;
     transformationInverseTransposeMatrixLocation: WebGLUniformLocation;
     reverseLightDirectionLocation: WebGLUniformLocation;
     textureLocation: WebGLUniformLocation;
     entityMap: Map<number, Entity[]>;
+    lightDataArray: Float32Array;
     public static async init(gl: WebGL2RenderingContext, programName: string): Promise<EntityRenderer> {
         return new Promise<EntityRenderer>(async (resolve) => {
             var entityRenderer: EntityRenderer = new EntityRenderer();
             entityRenderer.program = await Program.loadProgram(gl, programName);
+            entityRenderer.lightCountLocation = entityRenderer.program.getUniformLocation(gl, "u_lightCount");
+            entityRenderer.lightPositionsLocation = entityRenderer.program.getUniformLocation(gl, "u_lightPositions");
+            entityRenderer.viewWorldPositionLocation = entityRenderer.program.getUniformLocation(gl, "u_viewWorldPosition");
+            entityRenderer.worldMatrixLocation = entityRenderer.program.getUniformLocation(gl, "u_world");
             entityRenderer.projectionViewTransformationMatrixLocation = entityRenderer.program.getUniformLocation(gl, "u_projectionViewTransformationMatrix");
             entityRenderer.transformationInverseTransposeMatrixLocation = entityRenderer.program.getUniformLocation(gl, "u_transformInverseTransposeMatrix");
             entityRenderer.reverseLightDirectionLocation = entityRenderer.program.getUniformLocation(gl, "u_reverseLightDirection");
@@ -618,8 +626,23 @@ class EntityRenderer {
             this.entityMap.get(currentEntity.modelID).push(currentEntity);
         });
     }
-    private prepare(gl: WebGL2RenderingContext, entities: Entity[]): void {
-        this.prepareEntities(entities);
+    private prepareLights(lights: PointLight[]): void {
+        this.lightDataArray = new Float32Array(8 * 3);
+        for (let index = 0; index < 8; index++) {
+            if (index >= lights.length) {
+                this.lightDataArray[index * 3] = 0;
+                this.lightDataArray[index * 3 + 1] = 0;
+                this.lightDataArray[index * 3 + 2] = 0;
+            } else {
+                this.lightDataArray[index * 3] = lights[index].pos[0];
+                this.lightDataArray[index * 3 + 1] = lights[index].pos[1];
+                this.lightDataArray[index * 3 + 2] = lights[index].pos[2];
+            }
+        }
+    }
+    private prepare(gl: WebGL2RenderingContext, scene: Scene): void {
+        this.prepareEntities(scene.entities);
+        this.prepareLights(scene.lights);
         gl.enable(WebGL2RenderingContext.DEPTH_TEST);
         gl.depthFunc(WebGL2RenderingContext.LEQUAL);
         gl.enable(WebGL2RenderingContext.CULL_FACE);
@@ -629,19 +652,23 @@ class EntityRenderer {
     private finish(gl: WebGL2RenderingContext): void {
         this.program.stop(gl);
     }
-    private loadDataToUniforms(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, light: Light, currentEntity: Entity): void {
+    private loadDataToUniforms(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, sun: DirectionalLight, currentEntity: Entity, lightCount: number, cameraPos: vec3): void {
         var currentTransformationMatrix: mat4 = currentEntity.createTransformationMatrix();
         //@ts-ignore
         var projectionViewTransformationMatrix: mat4 = mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix);
         //@ts-ignore
         var transformationInverseMatrix: mat4 = mat4.invert(mat4.create(), currentTransformationMatrix);
 
+        gl.uniform1i(this.lightCountLocation, lightCount);
+        gl.uniform3fv(this.lightPositionsLocation, this.lightDataArray);
+        gl.uniform3fv(this.viewWorldPositionLocation, cameraPos);
+        gl.uniformMatrix4fv(this.worldMatrixLocation, false, currentTransformationMatrix);
         gl.uniformMatrix4fv(this.projectionViewTransformationMatrixLocation, false, projectionViewTransformationMatrix);
         gl.uniformMatrix4fv(this.transformationInverseTransposeMatrixLocation, true, transformationInverseMatrix);
-        gl.uniform3fv(this.reverseLightDirectionLocation, light.dir);
+        gl.uniform3fv(this.reverseLightDirectionLocation, sun.dir);
     }
-    public render(gl: WebGL2RenderingContext, cameraPos: vec3, projectionViewMatrix: mat4, drawMode: number, light: Light, entities: Entity[]): void {
-        this.prepare(gl, entities);
+    public render(gl: WebGL2RenderingContext, cameraPos: vec3, projectionViewMatrix: mat4, drawMode: number, sun: DirectionalLight, scene: Scene): void {
+        this.prepare(gl, scene);
         this.entityMap.forEach((currentEntities: Entity[], currentModelID: number) => {
             VAO.getVAO(Model.getModel(currentModelID).vaoID).enableVAO(gl);
             Texture.getTexture(Model.getModel(currentModelID).textureID).activateTexture(gl);
@@ -653,7 +680,7 @@ class EntityRenderer {
                 if (currentEntity.disableFarPlaneCulling || vec3.distance(cameraPos, currentEntity.pos) > EntityRenderer.FAR_PLANE) {
                     return;
                 }
-                this.loadDataToUniforms(gl, projectionViewMatrix, light, currentEntity);
+                this.loadDataToUniforms(gl, projectionViewMatrix, sun, currentEntity, scene.lights.length, cameraPos);
                 if (VAO.vaos[Model.getModel(currentModelID).vaoID].containsIndexBuffer) {
                     gl.drawElements(drawMode, VAO.vaos[Model.getModel(currentModelID).vaoID].length, gl.UNSIGNED_SHORT, 0);
                 } else {
@@ -700,7 +727,7 @@ class TerrainRenderer {
     private finish(gl: WebGL2RenderingContext): void {
         this.program.stop(gl);
     }
-    private loadDataToUniforms(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, light: Light, currentTile: TerrainTile): void {
+    private loadDataToUniforms(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, sun: DirectionalLight, currentTile: TerrainTile): void {
         var currentTransformationMatrix: mat4 = currentTile.createTransformationMatrix();
         //@ts-ignore
         var projectionViewTransformationMatrix: mat4 = mat4.mul(mat4.create(), projectionViewMatrix, currentTransformationMatrix);
@@ -709,9 +736,9 @@ class TerrainRenderer {
 
         gl.uniformMatrix4fv(this.projectionViewTransformationMatrixLocation, false, projectionViewTransformationMatrix);
         gl.uniformMatrix4fv(this.transformationInverseTransposeMatrixLocation, true, transformationInverseMatrix);
-        gl.uniform3fv(this.reverseLightDirectionLocation, light.dir);
+        gl.uniform3fv(this.reverseLightDirectionLocation, sun.dir);
     }
-    public render(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, drawMode: number, light: Light, terrainTiles: TerrainTile[]): void {
+    public render(gl: WebGL2RenderingContext, projectionViewMatrix: mat4, drawMode: number, sun: DirectionalLight, terrainTiles: TerrainTile[]): void {
         this.prepare(gl);
         terrainTiles.forEach((currentTile: TerrainTile) => {
             if (currentTile == undefined) {
@@ -719,7 +746,7 @@ class TerrainRenderer {
             }
             VAO.getVAO(currentTile.vaoID).enableVAO(gl);
             Texture.getTexture(currentTile.textureID).activateTexture(gl);
-            this.loadDataToUniforms(gl, projectionViewMatrix, light, currentTile)
+            this.loadDataToUniforms(gl, projectionViewMatrix, sun, currentTile)
             gl.drawElements(drawMode, VAO.getVAO(currentTile.vaoID).length, WebGL2RenderingContext.UNSIGNED_SHORT, 0);
             Texture.getTexture(currentTile.textureID).disableTexture(gl);
             VAO.getVAO(currentTile.vaoID).disableVAO(gl);
@@ -758,14 +785,14 @@ class MasterRenderer {
         //@ts-ignore
         mat4.perspective(this.projectionMatrix, toRadians(MasterRenderer.FOV), gl.canvas.width / gl.canvas.height, MasterRenderer.NEAR_PLANE, MasterRenderer.FAR_PLANE);
     }
-    public render(gl: WebGL2RenderingContext, camera: Camera, light: Light, entities: Entity[], terrainTiles: TerrainTile[]): void {
+    public renderScene(gl: WebGL2RenderingContext, camera: Camera, sun: DirectionalLight, scene: Scene, terrainTiles: TerrainTile[]): void {
         MasterRenderer.prepareViewport(gl);
         MasterRenderer.clear(gl);
         camera.updateViewMatrix();
         //@ts-ignore
         var projectionViewMatrix: mat4 = mat4.mul(mat4.create(), this.projectionMatrix, camera.viewMatrix);
-        this.terrainRenderer.render(gl, projectionViewMatrix, this.drawMode, light, terrainTiles);
-        this.entityRenderer.render(gl, camera.pos, projectionViewMatrix, this.drawMode, light, entities);
+        this.terrainRenderer.render(gl, projectionViewMatrix, this.drawMode, sun, terrainTiles);
+        this.entityRenderer.render(gl, camera.pos, projectionViewMatrix, this.drawMode, sun, scene);
     }
 }
 class Buffer {
@@ -777,7 +804,7 @@ class Buffer {
     }
     public static async loadBuffer(bufferInfo): Promise<Buffer> {
         return new Promise<Buffer>(async (resolve, reject) => {
-           resolve(new Buffer(bufferInfo.byteLength, await (await fetch(`res/assets/${bufferInfo.uri}`)).arrayBuffer())); 
+            resolve(new Buffer(bufferInfo.byteLength, await (await fetch(`res/assets/${bufferInfo.uri}`)).arrayBuffer()));
         });
     }
     public getDataFromAccessor(accessor: Accessor, gltf: glTF): Float32Array | Uint16Array {
@@ -809,25 +836,29 @@ class Accessor {
 class Primitive {
     attributes: number[];
     indexAccessor: number;
+    material: number;
     constructor(primitiveInfo) {
         this.attributes = [];
         for (const key in primitiveInfo.attributes) {
             this.attributes.push(primitiveInfo.attributes[key]);
         }
         this.indexAccessor = primitiveInfo.indices;
+        this.material = primitiveInfo.material;
     }
 }
 class Mesh {
     name: string;
     primitive: Primitive;
     vaoID: number;
+    textureID: number;
     constructor(meshInfo) {
         this.name = meshInfo.name;
         this.primitive = new Primitive(meshInfo.primitives[0]);
         this.vaoID = -1;
+        this.textureID = -1;
     }
     public async load(gl: WebGL2RenderingContext, program: Program, gltf: glTF): Promise<void> {
-        if(this.vaoID == -1){
+        if (this.vaoID == -1) {
             let positionAccessor: Accessor = gltf.accessors[this.primitive.attributes[0]];
             let normalAccessor: Accessor = gltf.accessors[this.primitive.attributes[1]];
             let texCoordAccessor: Accessor = gltf.accessors[this.primitive.attributes[2]];
@@ -842,12 +873,13 @@ class Mesh {
                 new VBOData(gl, gltf.buffers[texCoordBufferView.buffer].getDataFromAccessor(texCoordAccessor, gltf), program, "TEXCOORD_0", 2, positionAccessor.componentType),
                 new VBOData(gl, gltf.buffers[indexBufferView.buffer].getDataFromAccessor(indexAccessor, gltf), program, "", 1, positionAccessor.componentType, true)
             );
-        }else{
+            this.textureID = await Texture.loadTexture(gl, gltf.textures[this.primitive.material]);
+        } else {
             console.warn("Mesh already loaded!");
         }
     }
-    public unload(gl: WebGL2RenderingContext): void{
-        if(this.vaoID == -1){
+    public unload(gl: WebGL2RenderingContext): void {
+        if (this.vaoID == -1) {
             throw new Error("Can't unload mesh when it's not loaded!");
         }
         VAO.getVAO(this.vaoID).delete(gl);
@@ -880,7 +912,7 @@ class Node {
         //@ts-ignore
         this.scale = nodeInfos[currentNodeInfo].scale ? vec3.fromValues(nodeInfos[currentNodeInfo].scale[0], nodeInfos[currentNodeInfo].scale[1], nodeInfos[currentNodeInfo].scale[2]) : vec3.fromValues(1, 1, 1);
         //@ts-ignore
-        this.translation = nodeInfos[currentNodeInfo].translation ? vec3.fromValues(nodeInfos[currentNodeInfo].translation[0], nodeInfos[currentNodeInfo].translation[1], nodeInfos[currentNodeInfo].translation[2]) : vec3.fromValues(1, 1, 1);
+        this.translation = nodeInfos[currentNodeInfo].translation ? vec3.fromValues(nodeInfos[currentNodeInfo].translation[0], nodeInfos[currentNodeInfo].translation[1], nodeInfos[currentNodeInfo].translation[2]) : vec3.fromValues(0, 0, 0);
     }
 }
 class Scene {
@@ -889,7 +921,7 @@ class Scene {
     lightNodes: Node[];
     cameraNodes: Node[];
     entities: Entity[];
-    lights: Light[];
+    lights: PointLight[];
     cameras: Camera[];
     currentCamera: number;
     constructor(sceneInfo, nodes: Node[]) {
@@ -914,20 +946,25 @@ class Scene {
     public switchCamera(camera: number) {
         this.currentCamera = camera;
     }
-    public async load(gl: WebGL2RenderingContext, program: Program, gltf: glTF): Promise<void>{
-        for(let currentEntityNode in this.entityNodes){
+    public async load(gl: WebGL2RenderingContext, program: Program, gltf: glTF): Promise<void> {
+        console.log(this.entityNodes)
+        for (let currentEntityNode in this.entityNodes) {
             //@ts-ignore
-            if(gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID == -1){
-            //@ts-ignore
-                gltf.meshes[this.entityNodes[currentEntityNode].mesh].load(gl, program, gltf);
+            if (gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID == -1) {
+                //@ts-ignore
+                await gltf.meshes[this.entityNodes[currentEntityNode].mesh].load(gl, program, gltf);
             }
             //@ts-ignore
-            this.entities.push(new Entity(await Model.loadWithCustomVAO(gl, program, gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID), this.entityNodes[currentEntityNode].translation, getEuler(vec3.create(), this.entityNodes[currentEntityNode].rotation)));
+            this.entities.push(new Entity(await Model.loadWithCustomVAOAndTexture(gl, program, gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID, gltf.meshes[this.entityNodes[currentEntityNode].mesh].textureID), this.entityNodes[currentEntityNode].translation, this.entityNodes[currentEntityNode].rotation, this.entityNodes[currentEntityNode].scale));
         }
+        this.lightNodes.forEach((currentLightNode: Node) => {
+            this.lights.push(new PointLight(currentLightNode.translation));
+        });
     }
 }
 class glTF {
     buffers: Buffer[];
+    textures: string[];
     bufferViews: BufferView[];
     accessors: Accessor[];
     meshes: Mesh[];
@@ -936,13 +973,14 @@ class glTF {
     currentScene: number;
     constructor() {
         this.buffers = [];
+        this.textures = [];
         this.bufferViews = [];
         this.accessors = [];
         this.meshes = [];
         this.nodes = [];
         this.scenes = [];
     }
-    public static async loadGLTFFile(uri: string): Promise<glTF> {
+    public static async loadGLTFFile(gl: WebGL2RenderingContext, uri: string): Promise<glTF> {
         return new Promise<glTF>(async (resolve, reject) => {
             let glTFJSON = await (await fetch(uri)).json();
             let tempGLTF: glTF = new glTF();
@@ -950,6 +988,9 @@ class glTF {
             for (let index = 0; index < glTFJSON.buffers.length; index++) {
                 tempGLTF.buffers.push(await Buffer.loadBuffer(glTFJSON.buffers[index]));
             }
+            glTFJSON.images.forEach((currentImage) => {
+                tempGLTF.textures.push(currentImage.uri);
+            });
             glTFJSON.bufferViews.forEach((currentBufferView) => {
                 tempGLTF.bufferViews.push(new BufferView(currentBufferView));
             });
@@ -971,35 +1012,14 @@ class glTF {
     }
 
 }
-function getEuler(out, quat) {
-    let x = quat[0],
-      y = quat[1],
-      z = quat[2],
-      w = quat[3],
-      x2 = x * x,
-      y2 = y * y,
-      z2 = z * z,
-      w2 = w * w;
-    let unit = x2 + y2 + z2 + w2;
-    let test = x * w - y * z;
-    if (test > 0.499995 * unit) { //TODO: Use glmatrix.EPSILON
-      // singularity at the north pole
-      out[0] = Math.PI / 2;
-      out[1] = 2 * Math.atan2(y, x);
-      out[2] = 0;
-    } else if (test < -0.499995 * unit) { //TODO: Use glmatrix.EPSILON
-      // singularity at the south pole
-      out[0] = -Math.PI / 2;
-      out[1] = 2 * Math.atan2(y, x);
-      out[2] = 0;
-    } else {
-      out[0] = Math.asin(2 * (x * z - w * y));
-      out[1] = Math.atan2(2 * (x * w + y * z), 1 - 2 * (z2 + w2));
-      out[2] = Math.atan2(2 * (x * y + z * w), 1 - 2 * (y2 + z2));
-    }
-    // TODO: Return them as degrees and not as radians
-    return out;
-  }
+function rotateXYZ(matrix: mat4, rot: vec3): void {
+    //@ts-ignore
+    mat4.rotateX(matrix, matrix, toRadians(rot[0]));
+    //@ts-ignore
+    mat4.rotateY(matrix, matrix, toRadians(rot[1]));
+    //@ts-ignore
+    mat4.rotateZ(matrix, matrix, toRadians(rot[2]));
+}
 async function loadImage(imageName: string): Promise<HTMLImageElement> {
     return new Promise<HTMLImageElement>((resolve) => {
         var image: HTMLImageElement = new Image();
@@ -1008,14 +1028,6 @@ async function loadImage(imageName: string): Promise<HTMLImageElement> {
             resolve(image);
         };
     });
-}
-function rotateXYZ(matrix: mat4, rot: vec3): void {
-    //@ts-ignore
-    mat4.rotateX(matrix, matrix, toRadians(rot[0]));
-    //@ts-ignore
-    mat4.rotateY(matrix, matrix, toRadians(rot[1]));
-    //@ts-ignore
-    mat4.rotateZ(matrix, matrix, toRadians(rot[2]));
 }
 function toRadians(x: number): number {
     return x * (Math.PI / 180);
@@ -1059,26 +1071,20 @@ async function main(): Promise<void> {
     var gl: WebGL2RenderingContext = await createContext();
 
     var renderer: MasterRenderer = await MasterRenderer.init(gl);
-    var gltf: glTF = await glTF.loadGLTFFile("res/assets/icosphere.gltf");
+    var gltf: glTF = await glTF.loadGLTFFile(gl, "res/assets/untitled.gltf");
     var scene: Scene = gltf.scenes[gltf.currentScene];
     await scene.load(gl, renderer.entityRenderer.program, gltf);
-    console.log(scene);
+    console.log(Model.models);
     //@ts-ignore
-    var camera: Camera = new Camera(vec3.fromValues(0, -1, 0), vec3.fromValues(0, 0, 0));
+    var camera: Camera = new Camera(vec3.fromValues(0, 1, 0), vec3.fromValues(0, 0, 0));
 
     //@ts-ignore
-    var sun: Light = new Light(vec3.fromValues(5, 7, 10));
+    var sun: Light = new DirectionalLight(vec3.fromValues(5, 7, 10));
 
     var tile: TerrainTile;
     TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 1, [0, 0, 0], await Texture.loadTexture(gl, "grass.jpg"), 3157).then((terrainTile: TerrainTile) => {
         tile = terrainTile;
     });
-
-    var entity: number = await Model.loadModelWithSeperateResources(gl, renderer.entityRenderer.program, "cube", "uvgrid.png");
-    var entity2: number = await Model.loadModel(gl, renderer.entityRenderer.program, "screen");
-    var entities: Entity[] = [];
-    entities.push(new Entity(entity, [0, 0, 6], [0, 0, 0]));
-    entities.push(new Entity(entity2, [0, 0, 12], [0, 0, 0], true));
     var then: number = millisToSeconds(Date.now());
     var deltaTime: number;
     var isPointerLocked: boolean = false;
@@ -1087,27 +1093,24 @@ async function main(): Promise<void> {
     };
     window.onkeydown = async (ev: KeyboardEvent) => {
         if (ev.code === "KeyC") {
-            camera.pos[1] += Camera.SPEED * deltaTime;
-        } else if (ev.code === "Space") {
             camera.pos[1] -= Camera.SPEED * deltaTime;
+        } else if (ev.code === "Space") {
+            camera.pos[1] += Camera.SPEED * deltaTime;
         }
+        let distance: number = Camera.SPEED * deltaTime;
         if (ev.code === "KeyW") {
-            let distance: number = Camera.SPEED * deltaTime;
-            camera.pos[0] += distance * Math.sin(toRadians(camera.rot[1]));
-            camera.pos[2] += distance * Math.cos(toRadians(camera.rot[1]));
-        } else if (ev.code === "KeyS") {
-            let distance: number = Camera.SPEED * deltaTime;
             camera.pos[0] -= distance * Math.sin(toRadians(camera.rot[1]));
             camera.pos[2] -= distance * Math.cos(toRadians(camera.rot[1]));
+        } else if (ev.code === "KeyS") {
+            camera.pos[0] += distance * Math.sin(toRadians(camera.rot[1]));
+            camera.pos[2] += distance * Math.cos(toRadians(camera.rot[1]));
         }
         if (ev.code === "KeyA") {
-            let distance: number = Camera.SPEED * deltaTime;
-            camera.pos[0] += distance * Math.sin(toRadians(camera.rot[1] + 90));
-            camera.pos[2] += distance * Math.cos(toRadians(camera.rot[1] + 90));
-        } else if (ev.code === "KeyD") {
-            let distance: number = Camera.SPEED * deltaTime;
             camera.pos[0] -= distance * Math.sin(toRadians(camera.rot[1] + 90));
             camera.pos[2] -= distance * Math.cos(toRadians(camera.rot[1] + 90));
+        } else if (ev.code === "KeyD") {
+            camera.pos[0] += distance * Math.sin(toRadians(camera.rot[1] + 90));
+            camera.pos[2] += distance * Math.cos(toRadians(camera.rot[1] + 90));
         }
         if (ev.code === "KeyP") {
             renderer.updateProjectionMatrix(gl);
@@ -1135,8 +1138,8 @@ async function main(): Promise<void> {
         then = millisToSeconds(Date.now());
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
-        updateEntities(entities, deltaTime);
-        renderer.render(gl, camera, sun, entities, [tile]);
+        renderer.renderScene(gl, camera, sun, scene, [tile]);
+        //renderer.render(gl, camera, sun, entities, [tile]);
         window.requestAnimationFrame(mainLoop);
     }
 }
