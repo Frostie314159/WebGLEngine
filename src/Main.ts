@@ -297,24 +297,50 @@ class Model {
     vaoID: number;
     textureID: number;
     static models: Model[] = [];
+    static testTexture: number = -1;
+    constructor(vaoID: number, textureID: number = -1){
+        this.vaoID = vaoID;
+        this.textureID = textureID == -1 ? Model.testTexture : textureID;
+    }
+    private static async initTestTexture(gl: WebGL2RenderingContext): Promise<void>{
+        Model.testTexture = await Texture.loadTexture(gl, "uvgrid.png");
+    }
     public static getModel(modelID: number): Model {
         return Model.models[modelID];
     }
     public static async loadModel(gl: WebGL2RenderingContext, program: Program, name: string): Promise<number> {
         return new Promise<number>(async (resolve) => {
-            var model: Model = new Model();
-            model.vaoID = await VAO.loadVAOFromOBJFile(gl, program, name);
-            model.textureID = await Texture.loadTexture(gl, `${name}.png`);
-            Model.models.push(model);
+            if(this.testTexture == -1){
+                await Model.initTestTexture(gl);
+            }
+            Model.models.push(new Model(await VAO.loadVAOFromOBJFile(gl, program, name), await Texture.loadTexture(gl, `${name}.png`)));
             resolve(Model.models.length - 1);
         });
     }
+    public static async loadModelWithoutTexture(gl: WebGL2RenderingContext, program: Program, name: string): Promise<number>{
+        return new Promise<number>(async (resolve, reject) => {
+            if(this.testTexture == -1){
+                await Model.initTestTexture(gl);
+            }
+            Model.models.push(new Model(await VAO.loadVAOFromOBJFile(gl, program, name)));
+            resolve(Model.models.length - 1);
+        });
+    }    
     public static async loadModelWithSeperateResources(gl: WebGL2RenderingContext, program: Program, modelName: string, textureName: string): Promise<number> {
         return new Promise<number>(async (resolve) => {
-            var model: Model = new Model();
-            model.vaoID = await VAO.loadVAOFromOBJFile(gl, program, modelName);
-            model.textureID = await Texture.loadTexture(gl, textureName);
-            Model.models.push(model);
+            if(this.testTexture == -1){
+                await Model.initTestTexture(gl);
+            }
+            Model.models.push(new Model(await VAO.loadVAOFromOBJFile(gl, program, modelName), await Texture.loadTexture(gl, textureName)));
+            resolve(Model.models.length - 1);
+        });
+    }
+    public static async loadWithCustomVAO(gl: WebGL2RenderingContext, program: Program, vaoID: number): Promise<number>{
+        return new Promise<number>(async (resolve, reject) => {
+            if(this.testTexture == -1){
+                await Model.initTestTexture(gl);
+            }
+            Model.models.push(new Model(vaoID, Model.testTexture));
             resolve(Model.models.length - 1);
         });
     }
@@ -751,7 +777,7 @@ class Buffer {
     }
     public static async loadBuffer(bufferInfo): Promise<Buffer> {
         return new Promise<Buffer>(async (resolve, reject) => {
-            resolve(new Buffer(bufferInfo.byteLength, await (await fetch(bufferInfo.uri)).arrayBuffer()));
+           resolve(new Buffer(bufferInfo.byteLength, await (await fetch(`res/assets/${bufferInfo.uri}`)).arrayBuffer())); 
         });
     }
     public getDataFromAccessor(accessor: Accessor, gltf: glTF): Float32Array | Uint16Array {
@@ -794,53 +820,67 @@ class Primitive {
 class Mesh {
     name: string;
     primitive: Primitive;
+    vaoID: number;
     constructor(meshInfo) {
         this.name = meshInfo.name;
         this.primitive = new Primitive(meshInfo.primitives[0]);
+        this.vaoID = -1;
     }
-    public async loadToVAO(gl: WebGL2RenderingContext, program: Program, gltf:glTF): Promise<number>{
-        return new Promise<number>(async (resolve, reject) => {
-            let positionAccessor: Accessor = gltf.accessors[this.primitive.attributes[0]]; 
-            let normalAccessor: Accessor = gltf.accessors[this.primitive.attributes[1]]; 
+    public async load(gl: WebGL2RenderingContext, program: Program, gltf: glTF): Promise<void> {
+        if(this.vaoID == -1){
+            let positionAccessor: Accessor = gltf.accessors[this.primitive.attributes[0]];
+            let normalAccessor: Accessor = gltf.accessors[this.primitive.attributes[1]];
             let texCoordAccessor: Accessor = gltf.accessors[this.primitive.attributes[2]];
-            let indexAccessor: Accessor = gltf.accessors[this.primitive.indexAccessor]; 
-            let positionBufferView: BufferView = gltf.bufferViews[positionAccessor.bufferView]; 
-            let normalBufferView: BufferView = gltf.bufferViews[normalAccessor.bufferView]; 
-            let texCoordBufferView: BufferView = gltf.bufferViews[texCoordAccessor.bufferView]; 
+            let indexAccessor: Accessor = gltf.accessors[this.primitive.indexAccessor];
+            let positionBufferView: BufferView = gltf.bufferViews[positionAccessor.bufferView];
+            let normalBufferView: BufferView = gltf.bufferViews[normalAccessor.bufferView];
+            let texCoordBufferView: BufferView = gltf.bufferViews[texCoordAccessor.bufferView];
             let indexBufferView: BufferView = gltf.bufferViews[indexAccessor.bufferView];
-            console.log(gltf.buffers);
-            resolve(await VAO.loadVAOFromArray(gl, false, 
-                    new VBOData(gl, gltf.buffers[positionBufferView.buffer].getDataFromAccessor(positionAccessor, gltf), program, "POSITION", 3, positionAccessor.componentType),
-                    new VBOData(gl, gltf.buffers[normalBufferView.buffer].getDataFromAccessor(normalAccessor, gltf), program, "NORMAL", 3, positionAccessor.componentType),
-                    new VBOData(gl, gltf.buffers[texCoordBufferView.buffer].getDataFromAccessor(texCoordAccessor, gltf), program, "TEXCOORD_0", 2, positionAccessor.componentType),
-                    new VBOData(gl, gltf.buffers[indexBufferView.buffer].getDataFromAccessor(indexAccessor, gltf), program, "", 1, positionAccessor.componentType, true)
-                ));
-        });
+            this.vaoID = await VAO.loadVAOFromArray(gl, false,
+                new VBOData(gl, gltf.buffers[positionBufferView.buffer].getDataFromAccessor(positionAccessor, gltf), program, "POSITION", 3, positionAccessor.componentType),
+                new VBOData(gl, gltf.buffers[normalBufferView.buffer].getDataFromAccessor(normalAccessor, gltf), program, "NORMAL", 3, positionAccessor.componentType),
+                new VBOData(gl, gltf.buffers[texCoordBufferView.buffer].getDataFromAccessor(texCoordAccessor, gltf), program, "TEXCOORD_0", 2, positionAccessor.componentType),
+                new VBOData(gl, gltf.buffers[indexBufferView.buffer].getDataFromAccessor(indexAccessor, gltf), program, "", 1, positionAccessor.componentType, true)
+            );
+        }else{
+            console.warn("Mesh already loaded!");
+        }
+    }
+    public unload(gl: WebGL2RenderingContext): void{
+        if(this.vaoID == -1){
+            throw new Error("Can't unload mesh when it's not loaded!");
+        }
+        VAO.getVAO(this.vaoID).delete(gl);
+        this.vaoID = -1;
     }
 }
 class Node {
     mesh: number;
+    camera: number;
     name: string;
     type: number;
     rotation: vec3;
     scale: vec3;
     translation: vec3;
-    constructor(nodeInfo) {
-        this.mesh = "mesh" in nodeInfo ? nodeInfo.mesh : -1;
-        this.name = nodeInfo.name;
+    constructor(nodeInfos, currentNodeInfo: number) {
+        this.name = nodeInfos[currentNodeInfo].name;
+        this.mesh = "mesh" in nodeInfos[currentNodeInfo] ? nodeInfos[currentNodeInfo].mesh : -1;
         if (this.name.startsWith("Light")) {
             this.type = 1;
+        } else if ("camera" in nodeInfos) {
+            this.type = 3;
+            this.camera = nodeInfos.camera;
         } else if (this.name.startsWith("Camera")) {
             this.type = 2;
         } else {
             this.type = 0;
         }
         //@ts-ignore
-        this.rotation = nodeInfo.rotation ? quat.fromValues(nodeInfo.rotation[0], nodeInfo.rotation[1], nodeInfo.rotation[2], nodeInfo.rotation[3]) : quat.fromEuler(quat.create(), 0, 0, 0);
+        this.rotation = nodeInfos[currentNodeInfo].rotation ? quat.fromValues(nodeInfos[currentNodeInfo].rotation[0], nodeInfos[currentNodeInfo].rotation[1], nodeInfos[currentNodeInfo].rotation[2], nodeInfos[currentNodeInfo].rotation[3]) : quat.fromEuler(quat.create(), 0, 0, 0);
         //@ts-ignore
-        this.scale = nodeInfo.scale ? vec3.fromValues(nodeInfo.scale[0], nodeInfo.scale[1], nodeInfo.scale[2]) : vec3.fromValues(1, 1, 1);
+        this.scale = nodeInfos[currentNodeInfo].scale ? vec3.fromValues(nodeInfos[currentNodeInfo].scale[0], nodeInfos[currentNodeInfo].scale[1], nodeInfos[currentNodeInfo].scale[2]) : vec3.fromValues(1, 1, 1);
         //@ts-ignore
-        this.translation = nodeInfo.translation ? vec3.fromValues(nodeInfo.translation[0], nodeInfo.translation[1], nodeInfo.translation[2]) : vec3.fromValues(1, 1, 1);
+        this.translation = nodeInfos[currentNodeInfo].translation ? vec3.fromValues(nodeInfos[currentNodeInfo].translation[0], nodeInfos[currentNodeInfo].translation[1], nodeInfos[currentNodeInfo].translation[2]) : vec3.fromValues(1, 1, 1);
     }
 }
 class Scene {
@@ -857,12 +897,15 @@ class Scene {
         this.entityNodes = [];
         this.lightNodes = [];
         this.cameraNodes = [];
+        this.entities = [];
+        this.lights = [];
+        this.cameras = [];
         sceneInfo.nodes.forEach((currentNode: number) => {
             if (nodes[currentNode].type == 0) {
                 this.entityNodes.push(nodes[currentNode]);
             } else if (nodes[currentNode].type == 1) {
                 this.lightNodes.push(nodes[currentNode]);
-            } else {
+            } else if (nodes[currentNode].type == 2) {
                 this.cameraNodes.push(nodes[currentNode]);
             }
         });
@@ -871,8 +914,16 @@ class Scene {
     public switchCamera(camera: number) {
         this.currentCamera = camera;
     }
-    public load(){
-
+    public async load(gl: WebGL2RenderingContext, program: Program, gltf: glTF): Promise<void>{
+        for(let currentEntityNode in this.entityNodes){
+            //@ts-ignore
+            if(gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID == -1){
+            //@ts-ignore
+                gltf.meshes[this.entityNodes[currentEntityNode].mesh].load(gl, program, gltf);
+            }
+            //@ts-ignore
+            this.entities.push(new Entity(await Model.loadWithCustomVAO(gl, program, gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID), this.entityNodes[currentEntityNode].translation, getEuler(vec3.create(), this.entityNodes[currentEntityNode].rotation)));
+        }
     }
 }
 class glTF {
@@ -895,9 +946,10 @@ class glTF {
         return new Promise<glTF>(async (resolve, reject) => {
             let glTFJSON = await (await fetch(uri)).json();
             let tempGLTF: glTF = new glTF();
-            glTFJSON.buffers.forEach(async (currentBuffer) => {
-                tempGLTF.buffers.push(await Buffer.loadBuffer(currentBuffer));
-            });
+            tempGLTF.buffers = [];
+            for (let index = 0; index < glTFJSON.buffers.length; index++) {
+                tempGLTF.buffers.push(await Buffer.loadBuffer(glTFJSON.buffers[index]));
+            }
             glTFJSON.bufferViews.forEach((currentBufferView) => {
                 tempGLTF.bufferViews.push(new BufferView(currentBufferView));
             });
@@ -907,8 +959,8 @@ class glTF {
             glTFJSON.meshes.forEach((currentMesh) => {
                 tempGLTF.meshes.push(new Mesh(currentMesh));
             });
-            glTFJSON.nodes.forEach((currentNode) => {
-                tempGLTF.nodes.push(new Node(currentNode));
+            glTFJSON.nodes.forEach((currentNode, i: number) => {
+                tempGLTF.nodes.push(new Node(glTFJSON.nodes, i));
             });
             glTFJSON.scenes.forEach((currentScene) => {
                 tempGLTF.scenes.push(new Scene(currentScene, tempGLTF.nodes));
@@ -919,6 +971,35 @@ class glTF {
     }
 
 }
+function getEuler(out, quat) {
+    let x = quat[0],
+      y = quat[1],
+      z = quat[2],
+      w = quat[3],
+      x2 = x * x,
+      y2 = y * y,
+      z2 = z * z,
+      w2 = w * w;
+    let unit = x2 + y2 + z2 + w2;
+    let test = x * w - y * z;
+    if (test > 0.499995 * unit) { //TODO: Use glmatrix.EPSILON
+      // singularity at the north pole
+      out[0] = Math.PI / 2;
+      out[1] = 2 * Math.atan2(y, x);
+      out[2] = 0;
+    } else if (test < -0.499995 * unit) { //TODO: Use glmatrix.EPSILON
+      // singularity at the south pole
+      out[0] = -Math.PI / 2;
+      out[1] = 2 * Math.atan2(y, x);
+      out[2] = 0;
+    } else {
+      out[0] = Math.asin(2 * (x * z - w * y));
+      out[1] = Math.atan2(2 * (x * w + y * z), 1 - 2 * (z2 + w2));
+      out[2] = Math.atan2(2 * (x * y + z * w), 1 - 2 * (y2 + z2));
+    }
+    // TODO: Return them as degrees and not as radians
+    return out;
+  }
 async function loadImage(imageName: string): Promise<HTMLImageElement> {
     return new Promise<HTMLImageElement>((resolve) => {
         var image: HTMLImageElement = new Image();
@@ -978,9 +1059,10 @@ async function main(): Promise<void> {
     var gl: WebGL2RenderingContext = await createContext();
 
     var renderer: MasterRenderer = await MasterRenderer.init(gl);
-    var gltf: glTF = await glTF.loadGLTFFile("res/assets/untitled.gltf");
-    console.log(gltf);
-    console.log(VAO.getVAO(await gltf.meshes[0].loadToVAO(gl, renderer.entityRenderer.program, gltf)));
+    var gltf: glTF = await glTF.loadGLTFFile("res/assets/icosphere.gltf");
+    var scene: Scene = gltf.scenes[gltf.currentScene];
+    await scene.load(gl, renderer.entityRenderer.program, gltf);
+    console.log(scene);
     //@ts-ignore
     var camera: Camera = new Camera(vec3.fromValues(0, -1, 0), vec3.fromValues(0, 0, 0));
 
