@@ -11,6 +11,7 @@ out vec4 out_color;
 
 uniform vec3 u_reverseLightDirection;
 uniform sampler2D u_texture;
+uniform bool u_disableLighting;
 
 void main(){
     vec3 unitNormal = normalize(out_normal);
@@ -23,17 +24,22 @@ void main(){
         vec3 unitLightVector = normalize(out_surfaceToLight[i]);
         float nDot1 = dot(unitNormal, unitLightVector);
         float brightness = max(nDot1, 0.0);
+        brightness *= 0.4;
         vec3 lightDirection = -unitLightVector;
         vec3 reflectedLightDirection = reflect(lightDirection, unitNormal);
         float specularFactor = max(dot(reflectedLightDirection, unitVectorToCamera), 0.0);
-        float dampedFactor = pow(specularFactor, 15.0);
+        float dampedFactor = pow(specularFactor, 300.0);
         totalDiffuse += brightness * vec3(1.0);
-        totalSpecular += dampedFactor * 1.0 * vec3(1.0);
+        totalSpecular += dampedFactor * 0.05 * vec3(1.0);
     }
     totalDiffuse = max(totalDiffuse, 0.2);
     vec4 textureColor = texture(u_texture, out_texCord);
     if(textureColor.a < 0.5){
         discard;
     }
-    out_color = vec4(totalDiffuse, 1.0) * textureColor + vec4(totalSpecular, 1.0);
+    if(u_disableLighting){
+        out_color = textureColor * vec4(0.8);
+    }else{
+        out_color = vec4(totalDiffuse, 1.0) * textureColor + vec4(totalSpecular, 1.0);
+    }
 }

@@ -355,8 +355,9 @@ class Entity {
     scl;
     disableFarPlaneCulling;
     disableBackFaceCulling;
+    disableLighting;
     static G = 9.81;
-    constructor(modelID, pos, rot, scl, disableBackFaceCulling = false, disableFarPlaneCulling = false) {
+    constructor(modelID, pos, rot, scl, disableBackFaceCulling = false, disableFarPlaneCulling = false, disableLighting = false) {
         this.modelID = modelID;
         this.pos = pos;
         this.rot = rot;
@@ -364,6 +365,7 @@ class Entity {
         //TODO: This is terrible
         this.disableFarPlaneCulling = disableFarPlaneCulling;
         this.disableBackFaceCulling = disableBackFaceCulling;
+        this.disableLighting = disableLighting;
     }
     update(deltaTime) {
         if (this.pos[1] >= 0) {
@@ -591,6 +593,7 @@ class EntityRenderer {
     transformationInverseTransposeMatrixLocation;
     reverseLightDirectionLocation;
     textureLocation;
+    disableLightingLocation;
     entityMap;
     lightDataArray;
     static async init(gl, programName) {
@@ -605,6 +608,7 @@ class EntityRenderer {
             entityRenderer.transformationInverseTransposeMatrixLocation = entityRenderer.program.getUniformLocation(gl, "u_transformInverseTransposeMatrix");
             entityRenderer.reverseLightDirectionLocation = entityRenderer.program.getUniformLocation(gl, "u_reverseLightDirection");
             entityRenderer.textureLocation = entityRenderer.program.getUniformLocation(gl, "u_texture");
+            entityRenderer.disableLightingLocation = entityRenderer.program.getUniformLocation(gl, "u_disableLighting");
             resolve(entityRenderer);
         });
     }
@@ -660,6 +664,7 @@ class EntityRenderer {
         gl.uniformMatrix4fv(this.projectionViewTransformationMatrixLocation, false, projectionViewTransformationMatrix);
         gl.uniformMatrix4fv(this.transformationInverseTransposeMatrixLocation, true, transformationInverseMatrix);
         gl.uniform3fv(this.reverseLightDirectionLocation, sun.dir);
+        gl.uniform1i(this.disableLightingLocation, currentEntity.disableLighting ? 1 : 0);
     }
     render(gl, cameraPos, projectionViewMatrix, drawMode, sun, scene) {
         this.prepare(gl, scene);
@@ -950,7 +955,7 @@ class Scene {
                 await gltf.meshes[this.entityNodes[currentEntityNode].mesh].load(gl, program, gltf);
             }
             //@ts-ignore
-            this.entities.push(new Entity(await Model.loadWithCustomVAOAndTexture(gl, program, gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID, gltf.meshes[this.entityNodes[currentEntityNode].mesh].textureID), this.entityNodes[currentEntityNode].translation, this.entityNodes[currentEntityNode].rotation, this.entityNodes[currentEntityNode].scale, true));
+            this.entities.push(new Entity(await Model.loadWithCustomVAOAndTexture(gl, program, gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID, gltf.meshes[this.entityNodes[currentEntityNode].mesh].textureID), this.entityNodes[currentEntityNode].translation, this.entityNodes[currentEntityNode].rotation, this.entityNodes[currentEntityNode].scale, true, false, this.entityNodes[currentEntityNode].name == "skybox"));
         }
         this.lightNodes.forEach((currentLightNode) => {
             this.lights.push(new PointLight(currentLightNode.translation));

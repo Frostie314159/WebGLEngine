@@ -357,8 +357,9 @@ class Entity {
     scl: vec3;
     disableFarPlaneCulling: boolean;
     disableBackFaceCulling: boolean;
+    disableLighting: boolean;
     static G = 9.81;
-    constructor(modelID: number, pos: vec3, rot: quat, scl: vec3, disableBackFaceCulling: boolean = false, disableFarPlaneCulling: boolean = false) {
+    constructor(modelID: number, pos: vec3, rot: quat, scl: vec3, disableBackFaceCulling: boolean = false, disableFarPlaneCulling: boolean = false, disableLighting: boolean = false) {
         this.modelID = modelID;
         this.pos = pos;
         this.rot = rot;
@@ -366,6 +367,7 @@ class Entity {
         //TODO: This is terrible
         this.disableFarPlaneCulling = disableFarPlaneCulling;
         this.disableBackFaceCulling = disableBackFaceCulling;
+        this.disableLighting = disableLighting;
     }
     public update(deltaTime: number): void {
         if (this.pos[1] >= 0) {
@@ -597,6 +599,7 @@ class EntityRenderer {
     transformationInverseTransposeMatrixLocation: WebGLUniformLocation;
     reverseLightDirectionLocation: WebGLUniformLocation;
     textureLocation: WebGLUniformLocation;
+    disableLightingLocation: WebGLUniformLocation;
     entityMap: Map<number, Entity[]>;
     lightDataArray: Float32Array;
     public static async init(gl: WebGL2RenderingContext, programName: string): Promise<EntityRenderer> {
@@ -611,6 +614,7 @@ class EntityRenderer {
             entityRenderer.transformationInverseTransposeMatrixLocation = entityRenderer.program.getUniformLocation(gl, "u_transformInverseTransposeMatrix");
             entityRenderer.reverseLightDirectionLocation = entityRenderer.program.getUniformLocation(gl, "u_reverseLightDirection");
             entityRenderer.textureLocation = entityRenderer.program.getUniformLocation(gl, "u_texture");
+            entityRenderer.disableLightingLocation = entityRenderer.program.getUniformLocation(gl, "u_disableLighting");
             resolve(entityRenderer);
         });
     }
@@ -666,6 +670,7 @@ class EntityRenderer {
         gl.uniformMatrix4fv(this.projectionViewTransformationMatrixLocation, false, projectionViewTransformationMatrix);
         gl.uniformMatrix4fv(this.transformationInverseTransposeMatrixLocation, true, transformationInverseMatrix);
         gl.uniform3fv(this.reverseLightDirectionLocation, sun.dir);
+        gl.uniform1i(this.disableLightingLocation, currentEntity.disableLighting ? 1 : 0);
     }
     public render(gl: WebGL2RenderingContext, cameraPos: vec3, projectionViewMatrix: mat4, drawMode: number, sun: DirectionalLight, scene: Scene): void {
         this.prepare(gl, scene);
@@ -955,7 +960,7 @@ class Scene {
                 await gltf.meshes[this.entityNodes[currentEntityNode].mesh].load(gl, program, gltf);
             }
             //@ts-ignore
-            this.entities.push(new Entity(await Model.loadWithCustomVAOAndTexture(gl, program, gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID, gltf.meshes[this.entityNodes[currentEntityNode].mesh].textureID), this.entityNodes[currentEntityNode].translation, this.entityNodes[currentEntityNode].rotation, this.entityNodes[currentEntityNode].scale, true));
+            this.entities.push(new Entity(await Model.loadWithCustomVAOAndTexture(gl, program, gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID, gltf.meshes[this.entityNodes[currentEntityNode].mesh].textureID), this.entityNodes[currentEntityNode].translation, this.entityNodes[currentEntityNode].rotation, this.entityNodes[currentEntityNode].scale, true, false, this.entityNodes[currentEntityNode].name == "skybox"));
         }
         this.lightNodes.forEach((currentLightNode: Node) => {
             this.lights.push(new PointLight(currentLightNode.translation));
