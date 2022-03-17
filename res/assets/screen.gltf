@@ -16,26 +16,6 @@
     ],
     "nodes" : [
         {
-            "mesh" : 0,
-            "name" : "Cube",
-            "rotation" : [
-                -0.2070508897304535,
-                -0.0966857448220253,
-                0.1157793402671814,
-                0.9666317701339722
-            ],
-            "scale" : [
-                1.0378202199935913,
-                0.6224843263626099,
-                0.053533684462308884
-            ],
-            "translation" : [
-                -2.3726484775543213,
-                2.1735246181488037,
-                0.467692494392395
-            ]
-        },
-        {
             "name" : "Light",
             "rotation" : [
                 0.16907575726509094,
@@ -44,45 +24,52 @@
                 0.570947527885437
             ],
             "translation" : [
-                5.016842365264893,
-                -11.175403594970703,
-                -2.2305984497070312
+                5.286458969116211,
+                1.6059257984161377,
+                -6.01529598236084
             ]
         },
         {
-            "name" : "Camera",
+            "mesh" : 0,
+            "name" : "Cube.001",
             "rotation" : [
-                0.483536034822464,
-                0.33687159419059753,
-                -0.20870360732078552,
-                0.7804827094078064
+                0.7071068286895752,
+                0,
+                0,
+                0.7071068286895752
+            ]
+        },
+        {
+            "name" : "Light.001",
+            "rotation" : [
+                0.16907575726509094,
+                0.7558803558349609,
+                -0.27217137813568115,
+                0.570947527885437
             ],
             "translation" : [
-                7.358891487121582,
-                4.958309173583984,
-                6.925790786743164
+                1.732062816619873,
+                0.5481750965118408,
+                3.4943346977233887
             ]
         }
     ],
     "materials" : [
         {
             "doubleSided" : true,
-            "name" : "Material",
+            "name" : "Default OBJ",
             "pbrMetallicRoughness" : {
-                "baseColorFactor" : [
-                    0.800000011920929,
-                    0.800000011920929,
-                    0.800000011920929,
-                    1
-                ],
+                "baseColorTexture" : {
+                    "index" : 0
+                },
                 "metallicFactor" : 0,
-                "roughnessFactor" : 0.4000000059604645
+                "roughnessFactor" : 0.5
             }
         }
     ],
     "meshes" : [
         {
-            "name" : "Cube",
+            "name" : "Cube.001",
             "primitives" : [
                 {
                     "attributes" : {
@@ -96,33 +83,46 @@
             ]
         }
     ],
+    "textures" : [
+        {
+            "sampler" : 0,
+            "source" : 0
+        }
+    ],
+    "images" : [
+        {
+            "mimeType" : "image/png",
+            "name" : "screen",
+            "uri" : "screen.png"
+        }
+    ],
     "accessors" : [
         {
             "bufferView" : 0,
             "componentType" : 5126,
-            "count" : 679,
+            "count" : 712,
             "max" : [
-                1,
-                1,
-                6.763843536376953
+                2.2626030445098877,
+                0.7894179821014404,
+                0.003785999957472086
             ],
             "min" : [
-                -1,
-                -1.3966755867004395,
-                -10.027487754821777
+                -2.2626030445098877,
+                -1.1703230142593384,
+                -3.2487640380859375
             ],
             "type" : "VEC3"
         },
         {
             "bufferView" : 1,
             "componentType" : 5126,
-            "count" : 679,
+            "count" : 712,
             "type" : "VEC3"
         },
         {
             "bufferView" : 2,
             "componentType" : 5126,
-            "count" : 679,
+            "count" : 712,
             "type" : "VEC2"
         },
         {
@@ -135,28 +135,34 @@
     "bufferViews" : [
         {
             "buffer" : 0,
-            "byteLength" : 8148,
+            "byteLength" : 8544,
             "byteOffset" : 0
         },
         {
             "buffer" : 0,
-            "byteLength" : 8148,
-            "byteOffset" : 8148
+            "byteLength" : 8544,
+            "byteOffset" : 8544
         },
         {
             "buffer" : 0,
-            "byteLength" : 5432,
-            "byteOffset" : 16296
+            "byteLength" : 5696,
+            "byteOffset" : 17088
         },
         {
             "buffer" : 0,
             "byteLength" : 3564,
-            "byteOffset" : 21728
+            "byteOffset" : 22784
+        }
+    ],
+    "samplers" : [
+        {
+            "magFilter" : 9729,
+            "minFilter" : 9987
         }
     ],
     "buffers" : [
         {
-            "byteLength" : 25292,
+            "byteLength" : 26348,
             "uri" : "screen.bin"
         }
     ]

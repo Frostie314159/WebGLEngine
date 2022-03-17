@@ -778,7 +778,7 @@ class MasterRenderer {
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     }
     public static clear(gl: WebGL2RenderingContext): void {
-        gl.clearColor(1, 1, 1, 1);
+        gl.clearColor(0, 0, 0, 1);
         gl.clear(WebGL2RenderingContext.COLOR_BUFFER_BIT);
     }
     public updateProjectionMatrix(gl: WebGL2RenderingContext): void {
@@ -897,7 +897,7 @@ class Node {
     constructor(nodeInfos, currentNodeInfo: number) {
         this.name = nodeInfos[currentNodeInfo].name;
         this.mesh = "mesh" in nodeInfos[currentNodeInfo] ? nodeInfos[currentNodeInfo].mesh : -1;
-        if (this.name.startsWith("Light")) {
+        if (this.name.startsWith("Light") || this.name.startsWith("Point")) {
             this.type = 1;
         } else if ("camera" in nodeInfos) {
             this.type = 3;
@@ -955,7 +955,7 @@ class Scene {
                 await gltf.meshes[this.entityNodes[currentEntityNode].mesh].load(gl, program, gltf);
             }
             //@ts-ignore
-            this.entities.push(new Entity(await Model.loadWithCustomVAOAndTexture(gl, program, gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID, gltf.meshes[this.entityNodes[currentEntityNode].mesh].textureID), this.entityNodes[currentEntityNode].translation, this.entityNodes[currentEntityNode].rotation, this.entityNodes[currentEntityNode].scale));
+            this.entities.push(new Entity(await Model.loadWithCustomVAOAndTexture(gl, program, gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID, gltf.meshes[this.entityNodes[currentEntityNode].mesh].textureID), this.entityNodes[currentEntityNode].translation, this.entityNodes[currentEntityNode].rotation, this.entityNodes[currentEntityNode].scale, true));
         }
         this.lightNodes.forEach((currentLightNode: Node) => {
             this.lights.push(new PointLight(currentLightNode.translation));
@@ -1071,15 +1071,14 @@ async function main(): Promise<void> {
     var gl: WebGL2RenderingContext = await createContext();
 
     var renderer: MasterRenderer = await MasterRenderer.init(gl);
-    var gltf: glTF = await glTF.loadGLTFFile(gl, "res/assets/untitled.gltf");
+    var gltf: glTF = await glTF.loadGLTFFile(gl, "res/assets/inforaum.gltf");
     var scene: Scene = gltf.scenes[gltf.currentScene];
     await scene.load(gl, renderer.entityRenderer.program, gltf);
-    console.log(Model.models);
     //@ts-ignore
     var camera: Camera = new Camera(vec3.fromValues(0, 1, 0), vec3.fromValues(0, 0, 0));
 
     //@ts-ignore
-    var sun: Light = new DirectionalLight(vec3.fromValues(5, 7, 10));
+    var sun: Light = new DirectionalLight(vec3.fromValues(0, 1, 0));
 
     var tile: TerrainTile;
     TerrainTile.generateTerrainTile(gl, renderer.terrainRenderer.program, 1, [0, 0, 0], await Texture.loadTexture(gl, "grass.jpg"), 3157).then((terrainTile: TerrainTile) => {
@@ -1138,7 +1137,7 @@ async function main(): Promise<void> {
         then = millisToSeconds(Date.now());
         gl.canvas.width = window.innerWidth;
         gl.canvas.height = window.innerHeight;
-        renderer.renderScene(gl, camera, sun, scene, [tile]);
+        renderer.renderScene(gl, camera, sun, scene, []);
         //renderer.render(gl, camera, sun, entities, [tile]);
         window.requestAnimationFrame(mainLoop);
     }

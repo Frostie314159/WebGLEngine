@@ -13,17 +13,27 @@ uniform vec3 u_reverseLightDirection;
 uniform sampler2D u_texture;
 
 void main(){
-    float light = 0.0;
-    float specular = 0.0;
-    vec3 normalized = normalize(out_normal);
-    light += dot(normalized, u_reverseLightDirection);
+    vec3 unitNormal = normalize(out_normal);
+    vec3 unitVectorToCamera = normalize(out_surfaceToView);
+
+    vec3 totalDiffuse = vec3(0.0);
+    vec3 totalSpecular = vec3(0.0);
+
     for(int i=0; i<out_lightCount; i++){
-        light += dot(normalized, normalize(out_surfaceToLight[i]));
-        if(light > 0.0){
-            specular += pow(dot(normalized, normalize(out_surfaceToLight[i]) + normalize(out_surfaceToView)), 150.0);
-        }
+        vec3 unitLightVector = normalize(out_surfaceToLight[i]);
+        float nDot1 = dot(unitNormal, unitLightVector);
+        float brightness = max(nDot1, 0.0);
+        vec3 lightDirection = -unitLightVector;
+        vec3 reflectedLightDirection = reflect(lightDirection, unitNormal);
+        float specularFactor = max(dot(reflectedLightDirection, unitVectorToCamera), 0.0);
+        float dampedFactor = pow(specularFactor, 15.0);
+        totalDiffuse += brightness * vec3(1.0);
+        totalSpecular += dampedFactor * 1.0 * vec3(1.0);
     }
-    out_color = texture(u_texture, out_texCord);
-    out_color.rgb *= max(light, 0.1);
-    //out_color.rgb += specular;
+    totalDiffuse = max(totalDiffuse, 0.2);
+    vec4 textureColor = texture(u_texture, out_texCord);
+    if(textureColor.a < 0.5){
+        discard;
+    }
+    out_color = vec4(totalDiffuse, 1.0) * textureColor + vec4(totalSpecular, 1.0);
 }
