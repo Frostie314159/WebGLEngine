@@ -899,7 +899,7 @@ class Node {
     rotation: vec3;
     scale: vec3;
     translation: vec3;
-    constructor(nodeInfos, currentNodeInfo: number) {
+    constructor(nodeInfos, currentNodeInfo: number, gltf: glTF) {
         this.name = nodeInfos[currentNodeInfo].name;
         this.mesh = "mesh" in nodeInfos[currentNodeInfo] ? nodeInfos[currentNodeInfo].mesh : -1;
         if (this.name.startsWith("Light") || this.name.startsWith("Point")) {
@@ -911,6 +911,14 @@ class Node {
             this.type = 2;
         } else {
             this.type = 0;
+            if(!this.name.includes(".")){
+                gltf.uniqueMeshes.set(this.name, this.mesh);
+            }else{
+                this.mesh = gltf.uniqueMeshes.get(this.name.split(".")[0]);
+                if(this.mesh == undefined){
+                    this.mesh = nodeInfos[currentNodeInfo].mesh;
+                }
+            }
         }
         //@ts-ignore
         this.rotation = nodeInfos[currentNodeInfo].rotation ? quat.fromValues(nodeInfos[currentNodeInfo].rotation[0], nodeInfos[currentNodeInfo].rotation[1], nodeInfos[currentNodeInfo].rotation[2], nodeInfos[currentNodeInfo].rotation[3]) : quat.fromEuler(quat.create(), 0, 0, 0);
@@ -952,8 +960,8 @@ class Scene {
         this.currentCamera = camera;
     }
     public async load(gl: WebGL2RenderingContext, program: Program, gltf: glTF): Promise<void> {
-        console.log(this.entityNodes)
         for (let currentEntityNode in this.entityNodes) {
+            console.log(this.entityNodes);
             //@ts-ignore
             if (gltf.meshes[this.entityNodes[currentEntityNode].mesh].vaoID == -1) {
                 //@ts-ignore
@@ -973,6 +981,7 @@ class glTF {
     bufferViews: BufferView[];
     accessors: Accessor[];
     meshes: Mesh[];
+    uniqueMeshes: Map<string, number>;
     nodes: Node[];
     scenes: Scene[];
     currentScene: number;
@@ -982,6 +991,7 @@ class glTF {
         this.bufferViews = [];
         this.accessors = [];
         this.meshes = [];
+        this.uniqueMeshes = new Map<string, number>();
         this.nodes = [];
         this.scenes = [];
     }
@@ -1006,7 +1016,7 @@ class glTF {
                 tempGLTF.meshes.push(new Mesh(currentMesh));
             });
             glTFJSON.nodes.forEach((currentNode, i: number) => {
-                tempGLTF.nodes.push(new Node(glTFJSON.nodes, i));
+                tempGLTF.nodes.push(new Node(glTFJSON.nodes, i, tempGLTF));
             });
             glTFJSON.scenes.forEach((currentScene) => {
                 tempGLTF.scenes.push(new Scene(currentScene, tempGLTF.nodes));

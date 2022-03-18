@@ -34,9 +34,6 @@ void main(){
     }
     totalDiffuse = max(totalDiffuse, 0.2);
     vec4 textureColor = texture(u_texture, out_texCord);
-    if(textureColor.a < 0.5){
-        discard;
-    }
     if(u_disableLighting){
         out_color = textureColor * vec4(0.8);
     }else{
