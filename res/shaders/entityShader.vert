@@ -13,13 +13,12 @@ uniform int u_lightCount;
 uniform vec3 u_lightPositions[MAX_LIGHTS];
 uniform vec3 u_viewWorldPosition;
 uniform mat4 u_world;
-uniform mat4 u_projectionViewTransformationMatrix;
-uniform mat4 u_transformInverseTransposeMatrix;
+uniform mat4 u_projectionView;
 
 void main(){
-    out_normal = mat3(u_transformInverseTransposeMatrix) * NORMAL;
+    out_normal = mat3(transpose(inverse(u_world))) * NORMAL;
     out_texCord = TEXCOORD_0;
-    gl_Position = u_projectionViewTransformationMatrix * POSITION;
+    gl_Position = u_projectionView * u_world * POSITION;
     out_lightCount = u_lightCount;
     vec3 surfaceWorldPosition = (u_world * POSITION).xyz;
     for(int i=0; i<u_lightCount; i++){
