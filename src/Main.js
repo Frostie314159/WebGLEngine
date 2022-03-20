@@ -666,24 +666,26 @@ class EntityRenderer {
     }
     generateTransformationMatrixData(entities) {
         let data = new Float32Array(entities.length * 16);
-        entities.forEach((currentEntity, x) => {
-            let matrix = currentEntity.createTransformationMatrix();
+        for (let x = 0; x < entities.length; x++) {
+            let currentMatrix = entities[x].createTransformationMatrix();
             for (let y = 0; y < 16; y++) {
-                data[x * 16 + y] = matrix[y];
+                data[x * 16 + y] = currentMatrix[y];
             }
-        });
+        }
         return data;
     }
     updateMatrixBuffer(gl, data) {
         gl.bindBuffer(WebGL2RenderingContext.ARRAY_BUFFER, this.matrixBuffer);
-        gl.bufferData(WebGL2RenderingContext.ARRAY_BUFFER, data, WebGL2RenderingContext.DYNAMIC_DRAW);
+        gl.bufferData(WebGL2RenderingContext.ARRAY_BUFFER, data, WebGL2RenderingContext.STATIC_DRAW);
         const bytesPerMatrix = 4 * 16;
         for (let index = 0; index < 4; index++) {
             gl.enableVertexAttribArray(this.matrixLocation + index);
             const offset = index * 16;
             gl.vertexAttribPointer(this.matrixLocation + index, 4, WebGL2RenderingContext.FLOAT, false, bytesPerMatrix, offset);
             gl.vertexAttribDivisor(this.matrixLocation + index, 1);
+            gl.disableVertexAttribArray(this.matrixLocation + index);
         }
+        gl.bindBuffer(WebGL2RenderingContext.ARRAY_BUFFER, null);
     }
     finish(gl) {
         this.program.stop(gl);
@@ -713,7 +715,9 @@ class EntityRenderer {
                 this.updateMatrixBuffer(gl, this.generateTransformationMatrixData(currentEntities));
                 this.loadDataToUniformsInstanced(gl, projectionViewMatrix, sun, scene.lights.length, cameraPos);
                 gl.bindBuffer(WebGL2RenderingContext.ARRAY_BUFFER, this.matrixBuffer);
+                gl.enableVertexAttribArray(this.matrixLocation);
                 gl.drawElementsInstanced(drawMode, VAO.vaos[Model.getModel(currentModelID).vaoID].length, WebGL2RenderingContext.UNSIGNED_SHORT, 0, currentEntities.length);
+                gl.disableVertexAttribArray(this.matrixLocation);
                 gl.bindBuffer(WebGL2RenderingContext.ARRAY_BUFFER, null);
             }
             else {
@@ -727,7 +731,7 @@ class EntityRenderer {
                     }
                     this.loadDataToUniforms(gl, projectionViewMatrix, sun, currentEntity, scene.lights.length, cameraPos);
                     if (VAO.vaos[Model.getModel(currentModelID).vaoID].containsIndexBuffer) {
-                        gl.drawElements(drawMode, VAO.vaos[Model.getModel(currentModelID).vaoID].length, gl.UNSIGNED_SHORT, 0);
+                        gl.drawElements(drawMode, VAO.vaos[Model.getModel(currentModelID).vaoID].length, WebGL2RenderingContext.UNSIGNED_SHORT, 0);
                     }
                     else {
                         gl.drawArrays(drawMode, 0, VAO.vaos[Model.getModel(currentModelID).vaoID].length);
@@ -1184,7 +1188,6 @@ async function main() {
         }
     };
     window.requestAnimationFrame(mainLoop);
-    console.log(Model.models);
     function mainLoop() {
         deltaTime = millisToSeconds(Date.now()) - then;
         then = millisToSeconds(Date.now());
