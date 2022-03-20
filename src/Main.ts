@@ -862,6 +862,11 @@ class MasterRenderer {
         this.terrainRenderer.render(gl, projectionViewMatrix, this.drawMode, sun, terrainTiles);
         this.entityRenderer.render(gl, camera.pos, projectionViewMatrix, this.drawMode, sun, scene);
     }
+    //Delete all renderers
+    public delete(gl: WebGL2RenderingContext): void{
+        this.terrainRenderer.delete(gl);
+        this.entityRenderer.delete(gl);
+    }
 }
 //GLTF-STUFF STARTS HERE(https://en.wikipedia.org/wiki/GlTF)
 //gltf buffer
@@ -1210,9 +1215,6 @@ async function main(): Promise<void> {
             document.getElementById("webgl_canvas").requestPointerLock();
             renderer.updateProjectionMatrix(gl);
         }
-        if (ev.code === "KeyM") {
-            renderer.drawMode = (renderer.drawMode === WebGL2RenderingContext.TRIANGLES) ? WebGL2RenderingContext.LINE_LOOP : WebGL2RenderingContext.TRIANGLES;
-        }
     };
     document.onpointerlockchange = () => {
         isPointerLocked = !isPointerLocked;
@@ -1233,5 +1235,10 @@ async function main(): Promise<void> {
         renderer.renderScene(gl, camera, sun, scene, [tile]);
         window.requestAnimationFrame(mainLoop);
     }
+    renderer.delete(gl);
+    VAO.deleteALL(gl);
+    Texture.deleteALL(gl);
+    gl.getExtension("WEBGL_lose_context").loseContext();
 }
 document.body.onload = main;
+//ROT1: Foemjdi gfujdi
